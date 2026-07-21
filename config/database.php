@@ -16,10 +16,10 @@
  * ============================================================
  */
 
-const SKED_DB_HOST = '127.0.0.1';
-const SKED_DB_NAME = 'sked_db';
-const SKED_DB_USER = 'root';
-const SKED_DB_PASS = '';
+const SKED_DB_HOST = 'localhost';
+const SKED_DB_NAME = 'u763192172_sked';
+const SKED_DB_USER = 'u763192172_sked';
+const SKED_DB_PASS = 'Sked12345!';
 const SKED_DB_CHARSET = 'utf8mb4';
 
 /**
