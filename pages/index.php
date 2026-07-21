@@ -76,6 +76,7 @@ foreach ($announcementEvents as $ev) {
         'title' => (string) $ev['title'],
         'body' => !empty($ev['description']) ? (string) $ev['description'] : 'See your SK for details on this event.',
         'posted' => 'Posted ' . date('F j, Y', strtotime((string) $ev['created_at'])),
+        'image_url' => sked_event_image_url($ev, 'public/event_image.php'),
     ];
 }
 
@@ -991,7 +992,7 @@ if ($geoBarangayView) {
     .announce-slide{
       min-height:370px;
       display:grid;
-      grid-template-columns:280px minmax(0,1fr);
+      grid-template-columns:280px minmax(280px,.8fr) minmax(0,1fr);
     }
     .announce-rail{
       position:relative;
@@ -1048,6 +1049,37 @@ if ($geoBarangayView) {
       font-size:.86rem;
       line-height:1.6;
       margin:1rem 0 0;
+    }
+    .announce-media{
+      position:relative;
+      min-height:100%;
+      overflow:hidden;
+      background:
+        linear-gradient(135deg,rgba(14,165,164,.18),rgba(245,158,11,.2)),
+        #eef0fb;
+    }
+    .announce-media img{
+      width:100%;
+      height:100%;
+      min-height:370px;
+      display:block;
+      object-fit:cover;
+    }
+    .announce-media-placeholder{
+      height:100%;
+      min-height:370px;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      color:var(--civic-deep);
+      font-size:3.4rem;
+    }
+    .announce-media::after{
+      content:"";
+      position:absolute;
+      inset:0;
+      background:linear-gradient(180deg,transparent 45%,rgba(30,27,75,.18));
+      pointer-events:none;
     }
     .announce-copy{
       display:flex;
@@ -1164,12 +1196,20 @@ if ($geoBarangayView) {
         height:1px;
         background:repeating-linear-gradient(90deg,rgba(255,255,255,.55) 0 7px,transparent 7px 15px);
       }
+      .announce-media,
+      .announce-media img,
+      .announce-media-placeholder{
+        min-height:260px;
+      }
       .announce-copy{padding:1.75rem 1.45rem 2rem;}
     }
     @media (max-width:575.98px){
       .announce-count{white-space:normal;}
       .announce-rail{gap:1.4rem;}
       .announce-index{width:52px;height:52px;font-size:1.1rem;}
+      .announce-media,
+      .announce-media img,
+      .announce-media-placeholder{min-height:210px;}
       .announce-title{font-size:1.45rem;}
       .announce-body{-webkit-line-clamp:5;}
       .announce-footer{align-items:flex-start;flex-direction:column;}
@@ -1323,6 +1363,13 @@ if ($geoBarangayView) {
                       <p class="announce-rail-note">Verified public bulletin from SKed's event and program board.</p>
                     </div>
                     <span class="announce-pill"><i class="bi bi-people-fill"></i> <?php echo e($announcement['pill']); ?></span>
+                  </div>
+                  <div class="announce-media">
+                    <?php if ($announcement['image_url'] !== ''): ?>
+                      <img src="<?php echo e($announcement['image_url']); ?>" alt="<?php echo e($announcement['title']); ?>">
+                    <?php else: ?>
+                      <div class="announce-media-placeholder" aria-hidden="true"><i class="bi bi-megaphone"></i></div>
+                    <?php endif; ?>
                   </div>
                   <div class="announce-copy">
                     <div class="announce-meta">

@@ -27,6 +27,9 @@ $displayName = !empty($_SESSION['name']) ? (string) $_SESSION['name'] : 'DILG Ad
 $todayLabel = date('l, F j, Y');
 
 $events = sked_events_for_manager('dilg', 0, null);
+$ongoingEvents = array_values(array_filter($events, static fn ($e) => sked_event_time_bucket($e) === 'ongoing'));
+$pastEvents = array_values(array_filter($events, static fn ($e) => sked_event_time_bucket($e) === 'past'));
+$upcomingEvents = array_values(array_filter($events, static fn ($e) => sked_event_time_bucket($e) === 'upcoming'));
 
 $statusBadge = static function (string $s): string {
     $map = ['draft' => 'secondary', 'published' => 'primary', 'confirmed' => 'info', 'ongoing' => 'info', 'completed' => 'success', 'cancelled' => 'danger', 'evaluation' => 'warning', 'closed' => 'dark'];
@@ -37,6 +40,51 @@ $scopeLabel = static function (array $ev) {
         return 'Brgy. ' . sked_barangay_name((int) $ev['barangay_id']);
     }
     return ucfirst((string) $ev['scope']);
+};
+
+$renderEventsTable = function (string $title, array $list, string $icon, string $emptyMsg) use ($statusBadge, $scopeLabel) {
+    ?>
+    <div class="docket-panel mb-4">
+        <div class="section-heading">
+            <h2><?php echo e($title); ?></h2>
+            <span class="section-note"><?php echo count($list); ?> total</span>
+        </div>
+        <?php if (empty($list)): ?>
+            <div class="text-center text-secondary py-5"><i class="bi <?php echo e($icon); ?> fs-1 d-block mb-2"></i><?php echo e($emptyMsg); ?></div>
+        <?php else: ?>
+            <div class="table-responsive"><table class="table align-middle">
+                <thead><tr><th>Event</th><th>Scope</th><th>Date</th><th>Type</th><th>Status</th><th class="text-end">Action</th></tr></thead>
+                <tbody>
+                <?php foreach ($list as $ev): $c = sked_participant_counts((int) $ev['id']); ?>
+                            <tr>
+                                <td>
+                                    <?php $imageUrl = sked_event_image_url($ev, '../public/event_image.php'); ?>
+                                    <div class="event-list-item">
+                                        <span class="event-list-thumb" aria-hidden="true">
+                                            <?php if ($imageUrl !== ''): ?>
+                                                <img src="<?php echo e($imageUrl); ?>" alt="">
+                                            <?php else: ?>
+                                                <i class="bi bi-image"></i>
+                                            <?php endif; ?>
+                                        </span>
+                                        <span>
+                                            <span class="fw-semibold d-block"><?php echo e((string) $ev['title']); ?></span>
+                                            <span class="small text-secondary tabular"><?php echo $ev['type'] === 'register' ? ($c['registered'] + $c['attended']) . ($ev['capacity'] !== null ? ' / ' . (int) $ev['capacity'] : '') . ' registered' : $c['active'] . ' interested'; ?></span>
+                                        </span>
+                                    </div>
+                                </td>
+                        <td class="small"><?php echo e($scopeLabel($ev)); ?></td>
+                        <td class="small text-secondary"><?php echo e($ev['event_date'] ? date('M j, Y', strtotime((string) $ev['event_date'])) : 'TBA'); ?></td>
+                        <td class="small"><?php echo $ev['type'] === 'register' ? 'Register' : 'Join'; ?></td>
+                        <td><span class="badge text-bg-<?php echo e($statusBadge((string) $ev['status'])); ?>"><?php echo e(ucfirst((string) $ev['status'])); ?></span></td>
+                        <td class="text-end"><a class="btn btn-sm btn-outline-primary" href="../manage/event.php?id=<?php echo (int) $ev['id']; ?>"><i class="bi bi-eye me-1"></i>View</a></td>
+                    </tr>
+                <?php endforeach; ?>
+                </tbody>
+            </table></div>
+        <?php endif; ?>
+    </div>
+    <?php
 };
 ?>
 <!doctype html>
@@ -75,34 +123,11 @@ $scopeLabel = static function (array $ev) {
                 <svg class="ridge-divider" viewBox="0 0 1200 20" preserveAspectRatio="none" aria-hidden="true"><path d="M0 14 Q150 2 300 12 T600 10 T900 13 T1200 8" fill="none" stroke="#818cf8" stroke-width="2"/></svg>
             </section>
 
-            <div class="docket-panel">
-                <div class="section-heading">
-                    <h2>All Events</h2>
-                    <span class="section-note"><?php echo count($events); ?> total</span>
-                </div>
-                <?php if (empty($events)): ?>
-                    <div class="text-center text-secondary py-5"><i class="bi bi-calendar-x fs-1 d-block mb-2"></i>No events yet.</div>
-                <?php else: ?>
-                    <div class="table-responsive"><table class="table align-middle">
-                        <thead><tr><th>Event</th><th>Scope</th><th>Date</th><th>Type</th><th>Status</th><th class="text-end">Action</th></tr></thead>
-                        <tbody>
-                        <?php foreach ($events as $ev): $c = sked_participant_counts((int) $ev['id']); ?>
-                            <tr>
-                                <td>
-                                    <div class="fw-semibold"><?php echo e((string) $ev['title']); ?></div>
-                                    <div class="small text-secondary tabular"><?php echo $ev['type'] === 'register' ? ($c['registered'] + $c['attended']) . ($ev['capacity'] !== null ? ' / ' . (int) $ev['capacity'] : '') . ' registered' : $c['active'] . ' interested'; ?></div>
-                                </td>
-                                <td class="small"><?php echo e($scopeLabel($ev)); ?></td>
-                                <td class="small text-secondary"><?php echo e($ev['event_date'] ? date('M j, Y', strtotime((string) $ev['event_date'])) : 'TBA'); ?></td>
-                                <td class="small"><?php echo $ev['type'] === 'register' ? 'Register' : 'Join'; ?></td>
-                                <td><span class="badge text-bg-<?php echo e($statusBadge((string) $ev['status'])); ?>"><?php echo e(ucfirst((string) $ev['status'])); ?></span></td>
-                                <td class="text-end"><a class="btn btn-sm btn-outline-primary" href="../manage/event.php?id=<?php echo (int) $ev['id']; ?>"><i class="bi bi-eye me-1"></i>View</a></td>
-                            </tr>
-                        <?php endforeach; ?>
-                        </tbody>
-                    </table></div>
-                <?php endif; ?>
-            </div>
+            <?php
+                $renderEventsTable('Ongoing Events', $ongoingEvents, 'bi-play-circle', 'No events are currently ongoing.');
+                $renderEventsTable('Past Events', $pastEvents, 'bi-clock-history', 'No past events yet.');
+                $renderEventsTable('Upcoming Events', $upcomingEvents, 'bi-calendar-x', 'No upcoming events yet.');
+            ?>
         </main>
     </div>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>

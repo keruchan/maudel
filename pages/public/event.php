@@ -48,7 +48,10 @@ if ($visible) {
         body { font-family: 'Plus Jakarta Sans', system-ui, sans-serif; background: #f5f5fb; color: #1e1b4b; }
         h1, h2, .brand-word { font-family: 'Sora', sans-serif; }
         .event-wrap { max-width: 640px; margin: 0 auto; padding: 2.5rem 1.25rem; }
-        .event-card { background: #fff; border: 1px solid #e5e7f2; border-radius: 18px; padding: 2rem; box-shadow: 0 10px 40px rgba(30,27,75,.06); }
+        .event-card { overflow:hidden; background: #fff; border: 1px solid #e5e7f2; border-radius: 18px; box-shadow: 0 10px 40px rgba(30,27,75,.06); }
+        .event-card-body { padding: 2rem; }
+        .event-hero-image { aspect-ratio: 16 / 9; background:#e9ebf7; border-bottom:1px solid #e5e7f2; }
+        .event-hero-image img { width:100%; height:100%; display:block; object-fit:cover; }
         .brand-seal { display:inline-flex; width:40px; height:40px; border-radius:12px; background:#4338ca; color:#fff; align-items:center; justify-content:center; }
         .meta-line { display:flex; gap:.5rem; align-items:center; color:#4b4b6a; margin-bottom:.35rem; }
         .btn-sked { background:#4338ca; border-color:#4338ca; color:#fff; }
@@ -64,14 +67,23 @@ if ($visible) {
 
         <?php if (!$visible): ?>
             <div class="event-card text-center">
+                <div class="event-card-body">
                 <i class="bi bi-calendar-x fs-1 text-secondary"></i>
                 <h1 class="h4 mt-3">Event not found</h1>
                 <p class="text-secondary">This event link is invalid or the event is no longer available.</p>
                 <a href="../index.php" class="btn btn-sked mt-2">Go to SKed</a>
+                </div>
             </div>
         <?php else: ?>
             <?php $counts = sked_participant_counts((int) $event['id']); $taken = $counts['registered'] + $counts['attended']; ?>
             <div class="event-card">
+                <?php $imageUrl = sked_event_image_url($event, 'event_image.php'); ?>
+                <?php if ($imageUrl !== ''): ?>
+                    <div class="event-hero-image">
+                        <img src="<?php echo e($imageUrl); ?>" alt="<?php echo e((string) $event['title']); ?>">
+                    </div>
+                <?php endif; ?>
+                <div class="event-card-body">
                 <div class="d-flex justify-content-between align-items-start mb-2">
                     <span class="badge text-bg-primary text-capitalize"><?php echo e((string) $event['type'] === 'register' ? 'Registration' : 'Open to join'); ?></span>
                     <?php if ((int) $event['is_team_sport'] === 1): ?><span class="badge text-bg-secondary">Team event</span><?php endif; ?>
@@ -100,6 +112,7 @@ if ($visible) {
                 <div class="d-flex gap-2">
                     <a href="../auth/login.php" class="btn btn-sked"><i class="bi bi-box-arrow-in-right me-1"></i> Sign in to join</a>
                     <a href="../auth/register.php" class="btn btn-outline-secondary">Create an account</a>
+                </div>
                 </div>
             </div>
         <?php endif; ?>

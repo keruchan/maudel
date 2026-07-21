@@ -38,7 +38,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $flash = ['type' => 'danger', 'msg' => 'Security validation failed. Please try again.'];
     } else {
         $creator = ['id' => $ppskUserId, 'role' => $role, 'name' => $displayName, 'barangay_id' => null];
-        $r = sked_create_event($creator, $_POST);
+        $r = sked_create_event($creator, $_POST, $_FILES['event_image'] ?? null);
         $flash = $r['ok']
             ? ['type' => 'success', 'msg' => 'Event "' . e((string) $_POST['title']) . '" created' . (!empty($_POST['publish']) ? ' and published.' : ' as a draft.')]
             : ['type' => 'danger', 'msg' => implode(' ', array_map('e', $r['errors']))];
@@ -46,6 +46,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $events = sked_events_for_manager($role, $ppskUserId, null);
+$ongoingEvents = array_values(array_filter($events, static fn ($e) => sked_event_time_bucket($e) === 'ongoing'));
+$pastEvents = array_values(array_filter($events, static fn ($e) => sked_event_time_bucket($e) === 'past'));
+$upcomingEvents = array_values(array_filter($events, static fn ($e) => sked_event_time_bucket($e) === 'upcoming'));
 
 $statusBadge = static function (string $s): string {
     $map = ['draft' => 'secondary', 'published' => 'primary', 'confirmed' => 'info', 'ongoing' => 'info', 'completed' => 'success', 'cancelled' => 'danger', 'evaluation' => 'warning', 'closed' => 'dark'];
@@ -55,6 +58,62 @@ $shareBase = (function () {
     $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
     return $scheme . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost') . '/SKed/pages/public/event.php?t=';
 })();
+
+$renderEventsTable = function (string $title, array $list, string $icon, string $emptyMsg) use ($statusBadge, $shareBase) {
+    ?>
+    <div class="docket-panel mb-4">
+        <div class="section-heading">
+            <h2><?php echo e($title); ?></h2>
+            <span class="section-note"><?php echo count($list); ?> total</span>
+        </div>
+        <?php if (empty($list)): ?>
+            <div class="text-center text-secondary py-5"><i class="bi <?php echo e($icon); ?> fs-1 d-block mb-2"></i><?php echo e($emptyMsg); ?></div>
+        <?php else: ?>
+            <div class="table-responsive">
+                <table class="table align-middle">
+                    <thead>
+                        <tr><th>Event</th><th>Scope</th><th>Date</th><th>Type</th><th>Status</th><th>Participants</th><th>Share Link</th><th class="text-end">Action</th></tr>
+                    </thead>
+                    <tbody>
+                    <?php foreach ($list as $ev): $c = sked_participant_counts((int) $ev['id']); ?>
+                        <tr>
+                            <td>
+                                <?php $imageUrl = sked_event_image_url($ev, '../public/event_image.php'); ?>
+                                <div class="event-list-item">
+                                    <span class="event-list-thumb" aria-hidden="true">
+                                        <?php if ($imageUrl !== ''): ?>
+                                            <img src="<?php echo e($imageUrl); ?>" alt="">
+                                        <?php else: ?>
+                                            <i class="bi bi-image"></i>
+                                        <?php endif; ?>
+                                    </span>
+                                    <span class="fw-semibold"><?php echo e((string) $ev['title']); ?></span>
+                                </div>
+                            </td>
+                            <td class="small text-capitalize"><?php echo e((string) $ev['scope']); ?></td>
+                            <td class="small text-secondary"><?php echo e($ev['event_date'] ? date('M j, Y', strtotime((string) $ev['event_date'])) : 'TBA'); ?></td>
+                            <td class="small"><?php echo $ev['type'] === 'register' ? 'Register' : 'Join'; ?></td>
+                            <td><span class="badge text-bg-<?php echo e($statusBadge((string) $ev['status'])); ?>"><?php echo e(ucfirst((string) $ev['status'])); ?></span></td>
+                            <td class="tabular">
+                                <?php echo $ev['type'] === 'register' ? ($c['registered'] + $c['attended']) . ($ev['capacity'] !== null ? ' / ' . (int) $ev['capacity'] : '') : $c['active']; ?>
+                                <span class="small text-secondary d-block"><?php echo $ev['type'] === 'register' ? 'registered' : 'interested'; ?></span>
+                            </td>
+                            <td>
+                                <div class="input-group input-group-sm" style="max-width:220px;">
+                                    <span class="input-group-text" title="Management-only share link"><i class="bi bi-link-45deg"></i></span>
+                                    <input type="text" class="form-control" readonly value="<?php echo e($shareBase . (string) $ev['share_token']); ?>" onclick="this.select();" aria-label="Shareable public link">
+                                </div>
+                            </td>
+                            <td class="text-end"><a class="btn btn-sm btn-outline-primary" href="../manage/event.php?id=<?php echo (int) $ev['id']; ?>"><i class="bi bi-gear me-1"></i>Manage</a></td>
+                        </tr>
+                    <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+        <?php endif; ?>
+    </div>
+    <?php
+};
 ?>
 <!doctype html>
 <html lang="en">
@@ -94,11 +153,11 @@ $shareBase = (function () {
 
             <?php if ($flash['msg'] !== ''): ?><div class="alert alert-<?php echo e($flash['type']); ?>" role="alert"><?php echo $flash['msg']; ?></div><?php endif; ?>
 
-            <div class="row g-4">
+            <div class="row g-4 mb-1">
                 <div class="col-lg-5">
                     <div class="docket-panel">
                         <div class="section-heading"><h2>Create Event</h2></div>
-                        <form method="post" action="events.php" novalidate>
+                        <form method="post" action="events.php" enctype="multipart/form-data" novalidate>
                             <input type="hidden" name="csrf_token" value="<?php echo e((string) $_SESSION['csrf_pevents_token']); ?>">
                             <div class="mb-3">
                                 <label for="title" class="form-label">Title</label>
@@ -125,6 +184,11 @@ $shareBase = (function () {
                             <div class="mb-3">
                                 <label for="description" class="form-label">Description</label>
                                 <textarea class="form-control" id="description" name="description" rows="2" maxlength="2000"></textarea>
+                            </div>
+                            <div class="mb-3">
+                                <label for="event_image" class="form-label">Event photo</label>
+                                <input type="file" class="form-control" id="event_image" name="event_image" accept="image/jpeg,image/png,image/webp">
+                                <div class="form-text">Optional JPG, PNG, or WebP image up to 5 MB.</div>
                             </div>
                             <div class="row g-2">
                                 <div class="col-6 mb-3">
@@ -164,42 +228,13 @@ $shareBase = (function () {
                         </form>
                     </div>
                 </div>
-
-                <div class="col-lg-7">
-                    <div class="docket-panel">
-                        <div class="section-heading"><h2>Federation Events</h2><span class="section-note"><?php echo count($events); ?> total</span></div>
-                        <?php if (empty($events)): ?>
-                            <div class="text-center text-secondary py-5"><i class="bi bi-calendar-x fs-1 d-block mb-2"></i>No federation events yet.</div>
-                        <?php else: ?>
-                            <?php foreach ($events as $ev): $c = sked_participant_counts((int) $ev['id']); ?>
-                                <div class="docket-row d-block">
-                                    <div class="d-flex justify-content-between align-items-start gap-2">
-                                        <div>
-                                            <div class="docket-title"><?php echo e((string) $ev['title']); ?>
-                                                <span class="badge text-bg-<?php echo e($statusBadge((string) $ev['status'])); ?> ms-1"><?php echo e(ucfirst((string) $ev['status'])); ?></span>
-                                                <span class="badge text-bg-light ms-1 text-capitalize"><?php echo e((string) $ev['scope']); ?></span>
-                                            </div>
-                                            <div class="docket-sub"><i class="bi bi-calendar3 me-1"></i><?php echo e($ev['event_date'] ? date('M j, Y', strtotime((string) $ev['event_date'])) : 'TBA'); ?> &middot; <?php echo $ev['type'] === 'register' ? 'Register' : 'Join'; ?></div>
-                                        </div>
-                                        <div class="text-end">
-                                            <span class="count-badge tabular"><?php echo $ev['type'] === 'register' ? ($c['registered'] + $c['attended']) . ($ev['capacity'] !== null ? ' / ' . (int) $ev['capacity'] : '') : $c['active']; ?></span>
-                                            <div class="small text-secondary"><?php echo $ev['type'] === 'register' ? 'registered' : 'interested'; ?></div>
-                                        </div>
-                                    </div>
-                                    <div class="mt-2 d-flex flex-wrap align-items-center gap-2">
-                                        <a class="btn btn-sm btn-outline-primary" href="../manage/event.php?id=<?php echo (int) $ev['id']; ?>"><i class="bi bi-gear me-1"></i>Manage</a>
-                                        <span class="small text-secondary">Min: <?php echo (int) $ev['min_participants']; ?></span>
-                                        <div class="input-group input-group-sm ms-auto" style="max-width:320px;">
-                                            <span class="input-group-text" title="Management-only share link"><i class="bi bi-link-45deg"></i></span>
-                                            <input type="text" class="form-control" readonly value="<?php echo e($shareBase . (string) $ev['share_token']); ?>" onclick="this.select();" aria-label="Shareable public link">
-                                        </div>
-                                    </div>
-                                </div>
-                            <?php endforeach; ?>
-                        <?php endif; ?>
-                    </div>
-                </div>
             </div>
+
+            <?php
+                $renderEventsTable('Ongoing Events', $ongoingEvents, 'bi-play-circle', 'No events are currently ongoing.');
+                $renderEventsTable('Past Events', $pastEvents, 'bi-clock-history', 'No past events yet.');
+                $renderEventsTable('Upcoming Events', $upcomingEvents, 'bi-calendar-x', 'No upcoming federation events yet.');
+            ?>
         </main>
     </div>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>

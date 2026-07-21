@@ -49,7 +49,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $creator = ['id' => $skUserId, 'role' => $role, 'name' => $displayName, 'barangay_id' => $barangayId];
         $data = $_POST;
         $data['scope'] = 'barangay';
-        $r = sked_create_event($creator, $data);
+        $r = sked_create_event($creator, $data, $_FILES['event_image'] ?? null);
         $flash = $r['ok']
             ? ['type' => 'success', 'msg' => 'Event "' . e((string) $_POST['title']) . '" created' . (!empty($_POST['publish']) ? ' and published.' : ' as a draft.')]
             : ['type' => 'danger', 'msg' => implode(' ', array_map('e', $r['errors']))];
@@ -59,6 +59,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 $events = $barangayId > 0 ? sked_events_for_manager($role, $skUserId, $barangayId) : [];
 $participants = $barangayId > 0 ? sked_participants_for_manager($role, $barangayId) : [];
+$ongoingEvents = array_values(array_filter($events, static fn ($e) => sked_event_time_bucket($e) === 'ongoing'));
+$pastEvents = array_values(array_filter($events, static fn ($e) => sked_event_time_bucket($e) === 'past'));
+$upcomingEvents = array_values(array_filter($events, static fn ($e) => sked_event_time_bucket($e) === 'upcoming'));
 
 $statusBadge = static function (string $s): string {
     $map = ['draft' => 'secondary', 'published' => 'primary', 'confirmed' => 'info', 'ongoing' => 'info', 'completed' => 'success', 'cancelled' => 'danger', 'evaluation' => 'warning', 'closed' => 'dark'];
@@ -73,6 +76,66 @@ $shareBase = (function () {
     $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
     return $scheme . '://' . $host . '/SKed/pages/public/event.php?t=';
 })();
+
+$renderEventsTable = function (string $title, array $list, string $icon, string $emptyMsg) use ($statusBadge, $shareBase) {
+    ?>
+    <div class="docket-panel mb-4">
+        <div class="section-heading">
+            <h2><?php echo e($title); ?></h2>
+            <span class="section-note"><?php echo count($list); ?> total</span>
+        </div>
+        <?php if (empty($list)): ?>
+            <div class="text-center text-secondary py-5"><i class="bi <?php echo e($icon); ?> fs-1 d-block mb-2"></i><?php echo e($emptyMsg); ?></div>
+        <?php else: ?>
+            <div class="table-responsive">
+                <table class="table align-middle">
+                    <thead>
+                        <tr>
+                            <th>Event</th><th>Date</th><th>Type</th><th>Status</th><th>Participants</th><th>Share Link</th><th class="text-end">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    <?php foreach ($list as $ev): $c = sked_participant_counts((int) $ev['id']); ?>
+                        <tr>
+                            <td>
+                                <?php $imageUrl = sked_event_image_url($ev, '../public/event_image.php'); ?>
+                                <div class="event-list-item">
+                                    <span class="event-list-thumb" aria-hidden="true">
+                                        <?php if ($imageUrl !== ''): ?>
+                                            <img src="<?php echo e($imageUrl); ?>" alt="">
+                                        <?php else: ?>
+                                            <i class="bi bi-image"></i>
+                                        <?php endif; ?>
+                                    </span>
+                                    <span>
+                                        <span class="fw-semibold d-block"><?php echo e((string) $ev['title']); ?></span>
+                                        <?php if ((int) $ev['is_team_sport'] === 1): ?><span class="badge text-bg-light">Team</span><?php endif; ?>
+                                    </span>
+                                </div>
+                            </td>
+                            <td class="small text-secondary"><?php echo e($ev['event_date'] ? date('M j, Y', strtotime((string) $ev['event_date'])) : 'TBA'); ?></td>
+                            <td class="small"><?php echo $ev['type'] === 'register' ? 'Register' : 'Join'; ?></td>
+                            <td><span class="badge text-bg-<?php echo e($statusBadge((string) $ev['status'])); ?>"><?php echo e(ucfirst((string) $ev['status'])); ?></span></td>
+                            <td class="tabular">
+                                <?php echo $ev['type'] === 'register' ? ($c['registered'] + $c['attended']) . ($ev['capacity'] !== null ? ' / ' . (int) $ev['capacity'] : '') : $c['active']; ?>
+                                <span class="small text-secondary d-block"><?php echo $ev['type'] === 'register' ? 'registered' : 'interested'; ?><?php echo $c['attended'] > 0 ? ' · ' . $c['attended'] . ' attended' : ''; ?></span>
+                            </td>
+                            <td>
+                                <div class="input-group input-group-sm" style="max-width:220px;">
+                                    <span class="input-group-text" title="Management-only share link"><i class="bi bi-link-45deg"></i></span>
+                                    <input type="text" class="form-control" readonly value="<?php echo e($shareBase . (string) $ev['share_token']); ?>" onclick="this.select();" aria-label="Shareable public link">
+                                </div>
+                            </td>
+                            <td class="text-end"><a class="btn btn-sm btn-outline-primary" href="../manage/event.php?id=<?php echo (int) $ev['id']; ?>"><i class="bi bi-gear me-1"></i>Manage</a></td>
+                        </tr>
+                    <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+        <?php endif; ?>
+    </div>
+    <?php
+};
 ?>
 <!doctype html>
 <html lang="en">
@@ -119,49 +182,11 @@ $shareBase = (function () {
                 <div class="alert alert-warning"><i class="bi bi-exclamation-triangle-fill me-1"></i> Your SK account isn't linked to a barangay yet.</div>
             <?php else: ?>
 
-            <div class="docket-panel mb-4">
-                <div class="section-heading">
-                    <h2>Your Events</h2>
-                    <span class="section-note"><?php echo count($events); ?> total</span>
-                </div>
-                <?php if (empty($events)): ?>
-                    <div class="text-center text-secondary py-5"><i class="bi bi-calendar-x fs-1 d-block mb-2"></i>No events yet. Click "Create Event" to post your first one.</div>
-                <?php else: ?>
-                    <div class="table-responsive">
-                        <table class="table align-middle">
-                            <thead>
-                                <tr>
-                                    <th>Event</th><th>Date</th><th>Type</th><th>Status</th><th>Participants</th><th>Share Link</th><th class="text-end">Action</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                            <?php foreach ($events as $ev): $c = sked_participant_counts((int) $ev['id']); ?>
-                                <tr>
-                                    <td>
-                                        <div class="fw-semibold"><?php echo e((string) $ev['title']); ?></div>
-                                        <?php if ((int) $ev['is_team_sport'] === 1): ?><span class="badge text-bg-light">Team</span><?php endif; ?>
-                                    </td>
-                                    <td class="small text-secondary"><?php echo e($ev['event_date'] ? date('M j, Y', strtotime((string) $ev['event_date'])) : 'TBA'); ?></td>
-                                    <td class="small"><?php echo $ev['type'] === 'register' ? 'Register' : 'Join'; ?></td>
-                                    <td><span class="badge text-bg-<?php echo e($statusBadge((string) $ev['status'])); ?>"><?php echo e(ucfirst((string) $ev['status'])); ?></span></td>
-                                    <td class="tabular">
-                                        <?php echo $ev['type'] === 'register' ? ($c['registered'] + $c['attended']) . ($ev['capacity'] !== null ? ' / ' . (int) $ev['capacity'] : '') : $c['active']; ?>
-                                        <span class="small text-secondary d-block"><?php echo $ev['type'] === 'register' ? 'registered' : 'interested'; ?><?php echo $c['attended'] > 0 ? ' · ' . $c['attended'] . ' attended' : ''; ?></span>
-                                    </td>
-                                    <td>
-                                        <div class="input-group input-group-sm" style="max-width:220px;">
-                                            <span class="input-group-text" title="Management-only share link"><i class="bi bi-link-45deg"></i></span>
-                                            <input type="text" class="form-control" readonly value="<?php echo e($shareBase . (string) $ev['share_token']); ?>" onclick="this.select();" aria-label="Shareable public link">
-                                        </div>
-                                    </td>
-                                    <td class="text-end"><a class="btn btn-sm btn-outline-primary" href="../manage/event.php?id=<?php echo (int) $ev['id']; ?>"><i class="bi bi-gear me-1"></i>Manage</a></td>
-                                </tr>
-                            <?php endforeach; ?>
-                            </tbody>
-                        </table>
-                    </div>
-                <?php endif; ?>
-            </div>
+            <?php
+                $renderEventsTable('Ongoing Events', $ongoingEvents, 'bi-play-circle', 'No events are currently ongoing.');
+                $renderEventsTable('Past Events', $pastEvents, 'bi-clock-history', 'No past events yet.');
+                $renderEventsTable('Upcoming Events', $upcomingEvents, 'bi-calendar-x', 'No upcoming events. Click "Create Event" to post one.');
+            ?>
 
             <div class="docket-panel">
                 <div class="section-heading">
@@ -197,13 +222,13 @@ $shareBase = (function () {
 
             <!-- Create Event modal -->
             <div class="modal fade" id="createEventModal" tabindex="-1" aria-labelledby="createEventModalLabel" aria-hidden="true"<?php echo $reopenModal ? ' data-autoshow="1"' : ''; ?>>
-                <div class="modal-dialog modal-lg modal-dialog-scrollable">
-                    <div class="modal-content">
+                <div class="modal-dialog modal-lg modal-dialog-scrollable create-event-dialog">
+                    <div class="modal-content create-event-modal">
                         <div class="modal-header">
                             <h2 class="modal-title h5" id="createEventModalLabel">Create Event</h2>
                             <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                         </div>
-                        <form method="post" action="events.php" novalidate>
+                        <form class="create-event-form" method="post" action="events.php" enctype="multipart/form-data" novalidate>
                             <div class="modal-body">
                                 <input type="hidden" name="csrf_token" value="<?php echo e((string) $_SESSION['csrf_events_token']); ?>">
                                 <div class="mb-3">
@@ -214,15 +239,20 @@ $shareBase = (function () {
                                     <label for="description" class="form-label">Description</label>
                                     <textarea class="form-control" id="description" name="description" rows="2" maxlength="2000"></textarea>
                                 </div>
-                                <div class="row g-2">
-                                    <div class="col-6 mb-3">
+                                <div class="mb-3">
+                                    <label for="event_image" class="form-label">Event photo</label>
+                                    <input type="file" class="form-control" id="event_image" name="event_image" accept="image/jpeg,image/png,image/webp">
+                                    <div class="form-text">Optional JPG, PNG, or WebP image up to 5 MB.</div>
+                                </div>
+                                <div class="create-event-grid">
+                                    <div class="create-event-field">
                                         <label for="category" class="form-label">Category</label>
                                         <select class="form-select" id="category" name="category">
                                             <option value="">— None —</option>
                                             <?php foreach ($categories as $c): ?><option value="<?php echo e($c); ?>"><?php echo e($c); ?></option><?php endforeach; ?>
                                         </select>
                                     </div>
-                                    <div class="col-6 mb-3">
+                                    <div class="create-event-field">
                                         <label for="type" class="form-label">Type</label>
                                         <select class="form-select" id="type" name="type">
                                             <option value="interested">Interested / Join (no cap)</option>
@@ -234,43 +264,45 @@ $shareBase = (function () {
                                     <label for="location" class="form-label">Location</label>
                                     <input type="text" class="form-control" id="location" name="location" maxlength="200">
                                 </div>
-                                <div class="row g-2">
-                                    <div class="col-6 mb-3">
+                                <div class="create-event-grid">
+                                    <div class="create-event-field">
                                         <label for="event_date" class="form-label">Event date</label>
                                         <input type="date" class="form-control" id="event_date" name="event_date" min="<?php echo e(date('Y-m-d')); ?>" required>
                                     </div>
-                                    <div class="col-6 mb-3">
+                                    <div class="create-event-field">
                                         <label for="registration_deadline" class="form-label">Reg. deadline</label>
                                         <input type="date" class="form-control" id="registration_deadline" name="registration_deadline" min="<?php echo e(date('Y-m-d')); ?>">
                                     </div>
-                                    <div class="col-6 mb-3">
+                                    <div class="create-event-field">
                                         <label for="start_time" class="form-label">Start time</label>
                                         <input type="time" class="form-control" id="start_time" name="start_time">
                                     </div>
-                                    <div class="col-6 mb-3">
+                                    <div class="create-event-field">
                                         <label for="end_time" class="form-label">End time</label>
                                         <input type="time" class="form-control" id="end_time" name="end_time">
                                     </div>
-                                    <div class="col-6 mb-3">
+                                    <div class="create-event-field">
                                         <label for="min_participants" class="form-label">Min. participants</label>
                                         <input type="number" class="form-control" id="min_participants" name="min_participants" min="0" value="0">
                                     </div>
-                                    <div class="col-6 mb-3">
+                                    <div class="create-event-field">
                                         <label for="capacity" class="form-label">Capacity <span class="text-secondary fw-normal">(register)</span></label>
                                         <input type="number" class="form-control" id="capacity" name="capacity" min="1" placeholder="e.g. 24">
                                     </div>
                                 </div>
-                                <div class="form-check mb-2">
-                                    <input class="form-check-input" type="checkbox" id="is_team_sport" name="is_team_sport" value="1">
-                                    <label class="form-check-label" for="is_team_sport">Team sport (registrants enter a team name)</label>
-                                </div>
-                                <div class="form-check">
-                                    <input class="form-check-input" type="checkbox" id="publish" name="publish" value="1" checked>
-                                    <label class="form-check-label" for="publish">Publish now (visible to youth)</label>
+                                <div class="create-event-checks">
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" id="is_team_sport" name="is_team_sport" value="1">
+                                        <label class="form-check-label" for="is_team_sport">Team sport (registrants enter a team name)</label>
+                                    </div>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" id="publish" name="publish" value="1" checked>
+                                        <label class="form-check-label" for="publish">Publish now (visible to youth)</label>
+                                    </div>
                                 </div>
                             </div>
-                            <div class="modal-footer">
-                                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal"><i class="bi bi-x-circle"></i>Cancel</button>
+                            <div class="modal-footer create-event-footer">
+                                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal"><i class="bi bi-x-circle me-1"></i>Cancel</button>
                                 <button type="submit" class="btn btn-sked"><i class="bi bi-calendar-plus me-1"></i> Create event</button>
                             </div>
                         </form>

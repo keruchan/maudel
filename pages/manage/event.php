@@ -122,6 +122,13 @@ $statusBadge = static function (string $s): string {
 
             <?php if ($flash['msg'] !== ''): ?><div class="alert alert-<?php echo e($flash['type']); ?>" role="alert"><?php echo $flash['msg']; ?></div><?php endif; ?>
 
+            <?php $detailImageUrl = sked_event_image_url($event, '../public/event_image.php'); ?>
+            <?php if ($detailImageUrl !== ''): ?>
+                <div class="event-detail-media mb-4">
+                    <img src="<?php echo e($detailImageUrl); ?>" alt="<?php echo e((string) $event['title']); ?>">
+                </div>
+            <?php endif; ?>
+
             <section class="row g-3 mb-4">
                 <div class="col-sm-3"><div class="ledger-card"><span class="ledger-tag">Signed up</span><div class="ledger-value tabular"><?php echo (int) $counts['active']; ?></div><div class="ledger-caption"><?php echo $event['type'] === 'register' ? 'registered' : 'interested'; ?></div></div></div>
                 <div class="col-sm-3"><div class="ledger-card accent-teal"><span class="ledger-tag">Attended</span><div class="ledger-value tabular"><?php echo (int) $counts['attended']; ?></div><div class="ledger-caption">present</div></div></div>

@@ -56,8 +56,104 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $events = ($isVerified && $barangayId > 0) ? sked_events_for_youth($userId, $barangayId) : [];
+$ongoingEvents = array_values(array_filter($events, static fn ($e) => sked_event_time_bucket($e) === 'ongoing'));
+$upcomingEvents = array_values(array_filter($events, static fn ($e) => sked_event_time_bucket($e) === 'upcoming'));
+
 $myParticipations = (!$isDemo && $isVerified) ? sked_youth_participations($userId) : [];
+$pastParticipations = array_values(array_filter($myParticipations, static fn ($p) => sked_event_time_bucket($p) === 'past'));
+
 $evaluable = (!$isDemo && $isVerified) ? sked_youth_evaluable_events($userId) : [];
+$evaluableById = [];
+foreach ($evaluable as $ev) { $evaluableById[(int) $ev['id']] = $ev; }
+
+$participantStatusBadge = static function (string $s): string {
+    $map = ['attended' => 'success', 'no_show' => 'danger', 'registered' => 'primary', 'interested' => 'info', 'cancelled' => 'secondary'];
+    return $map[$s] ?? 'secondary';
+};
+
+$renderBrowseTable = function (string $title, array $list, string $icon, string $emptyMsg) use ($isDemo) {
+    ?>
+    <div class="docket-panel mb-4">
+        <div class="section-heading"><h2><?php echo e($title); ?></h2><span class="section-note"><?php echo count($list); ?> available</span></div>
+        <?php if (empty($list)): ?>
+            <div class="text-center text-secondary py-5"><i class="bi <?php echo e($icon); ?> fs-1 d-block mb-2"></i><?php echo e($emptyMsg); ?></div>
+        <?php else: ?>
+            <div class="table-responsive">
+                <table class="table align-middle">
+                    <thead><tr><th>Event</th><th>Date</th><th>Scope</th><th>Slots</th><th class="text-end">Action</th></tr></thead>
+                    <tbody>
+                    <?php foreach ($list as $ev): ?>
+                        <?php
+                            $c = sked_participant_counts((int) $ev['id']);
+                            $isRegister = $ev['type'] === 'register';
+                            $taken = $c['registered'] + $c['attended'];
+                            $full = $isRegister && $ev['capacity'] !== null && $taken >= (int) $ev['capacity'];
+                            $mine = $ev['my_status'] ?? null;
+                            $joined = in_array($mine, ['interested', 'registered', 'attended'], true);
+                            $imageUrl = sked_event_image_url($ev, '../public/event_image.php');
+                        ?>
+                        <tr>
+                            <td>
+                                <div class="event-list-item">
+                                    <span class="event-list-thumb" aria-hidden="true">
+                                        <?php if ($imageUrl !== ''): ?>
+                                            <img src="<?php echo e($imageUrl); ?>" alt="">
+                                        <?php else: ?>
+                                            <i class="bi bi-image"></i>
+                                        <?php endif; ?>
+                                    </span>
+                                    <div>
+                                        <div class="fw-semibold"><?php echo e((string) $ev['title']); ?></div>
+                                        <?php if (!empty($ev['location'])): ?><div class="small text-secondary"><i class="bi bi-geo-alt me-1"></i><?php echo e((string) $ev['location']); ?></div><?php endif; ?>
+                                        <?php if (!empty($ev['category'])): ?><span class="badge text-bg-light"><?php echo e((string) $ev['category']); ?></span><?php endif; ?>
+                                    </div>
+                                </div>
+                            </td>
+                            <td class="small text-secondary"><?php echo e($ev['event_date'] ? date('M j, Y', strtotime((string) $ev['event_date'])) : 'TBA'); ?></td>
+                            <td class="small text-capitalize"><?php echo e((string) $ev['scope']); ?></td>
+                            <td class="small">
+                                <?php if ($isRegister): ?>
+                                    <?php echo $taken; ?><?php echo $ev['capacity'] !== null ? ' / ' . (int) $ev['capacity'] : ''; ?>
+                                <?php else: ?>
+                                    <?php echo $c['active']; ?> joined
+                                <?php endif; ?>
+                            </td>
+                            <td class="text-end">
+                                <?php if ($joined): ?>
+                                    <span class="badge text-bg-success me-1"><i class="bi bi-check-lg me-1"></i><?php echo $mine === 'attended' ? 'Attended' : 'Signed up'; ?></span>
+                                    <?php if ($mine !== 'attended'): ?>
+                                    <form method="post" action="events.php" class="d-inline">
+                                        <input type="hidden" name="csrf_token" value="<?php echo e((string) $_SESSION['csrf_yevents_token']); ?>">
+                                        <input type="hidden" name="action" value="cancel">
+                                        <input type="hidden" name="event_id" value="<?php echo (int) $ev['id']; ?>">
+                                        <button class="btn btn-sm btn-outline-secondary" type="submit"><i class="bi bi-x-circle"></i></button>
+                                    </form>
+                                    <?php endif; ?>
+                                <?php elseif ($full): ?>
+                                    <span class="badge text-bg-danger">Full</span>
+                                <?php else: ?>
+                                    <form method="post" action="events.php" class="d-inline-flex align-items-center gap-1 justify-content-end">
+                                        <input type="hidden" name="csrf_token" value="<?php echo e((string) $_SESSION['csrf_yevents_token']); ?>">
+                                        <input type="hidden" name="action" value="join">
+                                        <input type="hidden" name="event_id" value="<?php echo (int) $ev['id']; ?>">
+                                        <?php if ((int) $ev['is_team_sport'] === 1): ?>
+                                            <input type="text" class="form-control form-control-sm" style="width:120px;" name="team_name" maxlength="100" placeholder="Team name" required>
+                                        <?php endif; ?>
+                                        <button class="btn btn-sm btn-sked" type="submit" <?php echo $isDemo ? 'disabled' : ''; ?>>
+                                            <i class="bi bi-<?php echo $isRegister ? 'clipboard-check' : 'hand-thumbs-up'; ?> me-1"></i><?php echo $isRegister ? 'Register' : 'Join'; ?>
+                                        </button>
+                                    </form>
+                                <?php endif; ?>
+                            </td>
+                        </tr>
+                    <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+        <?php endif; ?>
+    </div>
+    <?php
+};
 ?>
 <!doctype html>
 <html lang="en">
@@ -106,117 +202,61 @@ $evaluable = (!$isDemo && $isVerified) ? sked_youth_evaluable_events($userId) : 
             <?php endif; ?>
 
             <?php if ($isVerified): ?>
-            <div class="row g-4">
-                <div class="col-lg-8">
-                    <div class="section-heading mb-3"><h2>Open Events</h2><span class="section-note"><?php echo count($events); ?> available</span></div>
-                    <?php if (empty($events)): ?>
-                        <div class="docket-panel text-center text-secondary py-5"><i class="bi bi-calendar-event fs-1 d-block mb-2"></i>No open events for your barangay right now. Check back soon.</div>
-                    <?php else: ?>
-                        <div class="row g-3">
-                        <?php foreach ($events as $ev): ?>
-                            <?php
-                                $c = sked_participant_counts((int) $ev['id']);
-                                $isRegister = $ev['type'] === 'register';
-                                $taken = $c['registered'] + $c['attended'];
-                                $full = $isRegister && $ev['capacity'] !== null && $taken >= (int) $ev['capacity'];
-                                $mine = $ev['my_status'] ?? null;
-                                $joined = in_array($mine, ['interested', 'registered', 'attended'], true);
-                            ?>
-                            <div class="col-md-6">
-                                <div class="registry-card h-100">
-                                    <div class="d-flex justify-content-between align-items-start">
-                                        <span class="registry-icon"><i class="bi bi-calendar-event"></i></span>
-                                        <span class="badge text-bg-light text-capitalize"><?php echo e((string) $ev['scope']); ?></span>
-                                    </div>
-                                    <h3><?php echo e((string) $ev['title']); ?></h3>
-                                    <p class="mb-2">
-                                        <i class="bi bi-calendar3 me-1"></i><?php echo e($ev['event_date'] ? date('M j, Y', strtotime((string) $ev['event_date'])) : 'TBA'); ?>
-                                        <?php if (!empty($ev['location'])): ?><br><i class="bi bi-geo-alt me-1"></i><?php echo e((string) $ev['location']); ?><?php endif; ?>
-                                        <?php if (!empty($ev['category'])): ?><br><i class="bi bi-tag me-1"></i><?php echo e((string) $ev['category']); ?><?php endif; ?>
-                                    </p>
-                                    <?php if ($isRegister): ?>
-                                        <div class="small text-secondary mb-2"><?php echo $taken; ?><?php echo $ev['capacity'] !== null ? ' / ' . (int) $ev['capacity'] : ''; ?> slots filled</div>
-                                    <?php endif; ?>
 
-                                    <?php if ($joined): ?>
-                                        <div class="d-flex align-items-center gap-2">
-                                            <span class="badge text-bg-success"><i class="bi bi-check-lg me-1"></i><?php echo $mine === 'attended' ? 'Attended' : 'Signed up'; ?></span>
-                                            <?php if ($mine !== 'attended'): ?>
-                                            <form method="post" action="events.php" class="d-inline">
+            <?php
+                $renderBrowseTable('Ongoing Events', $ongoingEvents, 'bi-play-circle', 'No events are currently ongoing for your barangay.');
+            ?>
+
+            <div class="docket-panel mb-4">
+                <div class="section-heading"><h2>Past Events</h2><span class="section-note"><?php echo count($pastParticipations); ?> joined</span></div>
+                <?php if (empty($pastParticipations)): ?>
+                    <div class="text-center text-secondary py-5"><i class="bi bi-clock-history fs-1 d-block mb-2"></i>No past events you've joined yet.</div>
+                <?php else: ?>
+                    <div class="table-responsive">
+                        <table class="table align-middle">
+                            <thead><tr><th>Event</th><th>Date</th><th>My Status</th><th>Feedback</th></tr></thead>
+                            <tbody>
+                            <?php foreach ($pastParticipations as $p): ?>
+                                <?php $rateInfo = $evaluableById[(int) $p['id']] ?? null; ?>
+                                <tr>
+                                    <td>
+                                        <div class="fw-semibold"><?php echo e((string) $p['title']); ?></div>
+                                        <?php if (!empty($p['team_name'])): ?><div class="small text-secondary">Team: <?php echo e((string) $p['team_name']); ?></div><?php endif; ?>
+                                    </td>
+                                    <td class="small text-secondary"><?php echo e($p['event_date'] ? date('M j, Y', strtotime((string) $p['event_date'])) : 'TBA'); ?></td>
+                                    <td><span class="badge text-bg-<?php echo e($participantStatusBadge((string) $p['my_status'])); ?> text-capitalize"><?php echo e(str_replace('_', ' ', (string) $p['my_status'])); ?></span></td>
+                                    <td style="min-width:260px;">
+                                        <?php if ($rateInfo === null): ?>
+                                            <span class="small text-secondary">—</span>
+                                        <?php elseif ($rateInfo['my_rating'] !== null): ?>
+                                            <span class="badge text-bg-success d-block mb-1" style="width:fit-content;"><i class="bi bi-star-fill me-1"></i>You rated <?php echo (int) $rateInfo['my_rating']; ?>/5</span>
+                                            <?php if (!empty($rateInfo['my_comments'])): ?><div class="small text-secondary fst-italic">"<?php echo e((string) $rateInfo['my_comments']); ?>"</div><?php endif; ?>
+                                        <?php else: ?>
+                                            <form method="post" action="events.php" class="d-flex flex-wrap align-items-center gap-1">
                                                 <input type="hidden" name="csrf_token" value="<?php echo e((string) $_SESSION['csrf_yevents_token']); ?>">
-                                                <input type="hidden" name="action" value="cancel">
-                                                <input type="hidden" name="event_id" value="<?php echo (int) $ev['id']; ?>">
-                                                <button class="btn btn-sm btn-outline-secondary" type="submit"><i class="bi bi-x-circle"></i>Cancel</button>
+                                                <input type="hidden" name="action" value="evaluate">
+                                                <input type="hidden" name="event_id" value="<?php echo (int) $p['id']; ?>">
+                                                <select name="rating" class="form-select form-select-sm" style="width:auto;" required>
+                                                    <option value="">Rate…</option>
+                                                    <?php for ($i = 5; $i >= 1; $i--): ?><option value="<?php echo $i; ?>"><?php echo $i; ?> — <?php echo ['', 'Poor', 'Fair', 'Good', 'Very good', 'Excellent'][$i]; ?></option><?php endfor; ?>
+                                                </select>
+                                                <input type="text" name="comments" class="form-control form-control-sm" style="width:150px;" maxlength="500" placeholder="Comment (optional)">
+                                                <button class="btn btn-sm btn-sked" type="submit"><i class="bi bi-star"></i></button>
                                             </form>
-                                            <?php endif; ?>
-                                        </div>
-                                    <?php elseif ($full): ?>
-                                        <span class="badge text-bg-danger">Full</span>
-                                    <?php else: ?>
-                                        <form method="post" action="events.php">
-                                            <input type="hidden" name="csrf_token" value="<?php echo e((string) $_SESSION['csrf_yevents_token']); ?>">
-                                            <input type="hidden" name="action" value="join">
-                                            <input type="hidden" name="event_id" value="<?php echo (int) $ev['id']; ?>">
-                                            <?php if ((int) $ev['is_team_sport'] === 1): ?>
-                                                <input type="text" class="form-control form-control-sm mb-2" name="team_name" maxlength="100" placeholder="Your team name" required>
-                                            <?php endif; ?>
-                                            <button class="btn btn-sm btn-sked" type="submit" <?php echo $isDemo ? 'disabled' : ''; ?>>
-                                                <i class="bi bi-<?php echo $isRegister ? 'clipboard-check' : 'hand-thumbs-up'; ?> me-1"></i><?php echo $isRegister ? 'Register' : 'Join'; ?>
-                                            </button>
-                                        </form>
-                                    <?php endif; ?>
-                                </div>
-                            </div>
-                        <?php endforeach; ?>
-                        </div>
-                    <?php endif; ?>
-                </div>
-
-                <div class="col-lg-4">
-                    <?php if (!empty($evaluable)): ?>
-                    <div class="docket-panel mb-4">
-                        <div class="section-heading"><h2>Rate &amp; Earn</h2><span class="section-note">Attended</span></div>
-                        <p class="small text-secondary">Evaluate events you attended to earn points.</p>
-                        <?php foreach ($evaluable as $ev): ?>
-                            <div class="mb-3 pb-3 border-bottom">
-                                <div class="fw-semibold small mb-1"><?php echo e((string) $ev['title']); ?></div>
-                                <?php if ($ev['my_rating'] !== null): ?>
-                                    <span class="badge text-bg-success"><i class="bi bi-star-fill me-1"></i>You rated <?php echo (int) $ev['my_rating']; ?>/5</span>
-                                <?php else: ?>
-                                    <form method="post" action="events.php">
-                                        <input type="hidden" name="csrf_token" value="<?php echo e((string) $_SESSION['csrf_yevents_token']); ?>">
-                                        <input type="hidden" name="action" value="evaluate">
-                                        <input type="hidden" name="event_id" value="<?php echo (int) $ev['id']; ?>">
-                                        <select name="rating" class="form-select form-select-sm mb-2" required>
-                                            <option value="">Rate 1–5…</option>
-                                            <?php for ($i = 5; $i >= 1; $i--): ?><option value="<?php echo $i; ?>"><?php echo $i; ?> — <?php echo ['', 'Poor', 'Fair', 'Good', 'Very good', 'Excellent'][$i]; ?></option><?php endfor; ?>
-                                        </select>
-                                        <input type="text" name="comments" class="form-control form-control-sm mb-2" maxlength="500" placeholder="Comments (optional)">
-                                        <button class="btn btn-sm btn-sked w-100" type="submit"><i class="bi bi-star"></i>Submit evaluation</button>
-                                    </form>
-                                <?php endif; ?>
-                            </div>
-                        <?php endforeach; ?>
-                    </div>
-                    <?php endif; ?>
-                    <div class="docket-panel" id="my-signups">
-                        <div class="section-heading"><h2>My Sign-ups</h2><span class="section-note"><?php echo count($myParticipations); ?></span></div>
-                        <?php if (empty($myParticipations)): ?>
-                            <div class="text-secondary small py-3">You haven't joined any events yet.</div>
-                        <?php else: ?>
-                            <?php foreach ($myParticipations as $p): ?>
-                                <div class="snapshot-row">
-                                    <span class="text-secondary">
-                                        <span class="status-dot"></span><?php echo e((string) $p['title']); ?>
-                                        <?php if (!empty($p['team_name'])): ?><br><small class="ms-3">Team: <?php echo e((string) $p['team_name']); ?></small><?php endif; ?>
-                                    </span>
-                                    <span class="status-ready text-capitalize"><?php echo e((string) $p['my_status']); ?></span>
-                                </div>
+                                        <?php endif; ?>
+                                    </td>
+                                </tr>
                             <?php endforeach; ?>
-                        <?php endif; ?>
+                            </tbody>
+                        </table>
                     </div>
-                </div>
+                <?php endif; ?>
             </div>
+
+            <?php
+                $renderBrowseTable('Upcoming Events', $upcomingEvents, 'bi-calendar-event', 'No upcoming events for your barangay right now. Check back soon.');
+            ?>
+
             <?php endif; ?>
         </main>
     </div>

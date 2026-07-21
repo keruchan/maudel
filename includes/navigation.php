@@ -118,7 +118,7 @@ function sked_navigation_items_for_role(string $role): array
                 $home, $dashboard,
                 ['key' => 'my_profile', 'section' => 'My Profile', 'href' => 'profile.php', 'icon' => 'bi-person-vcard', 'label' => 'KK Profiling'],
                 ['key' => 'browse_events', 'section' => 'Events', 'href' => 'events.php', 'icon' => 'bi-calendar-event', 'label' => 'Browse Events'],
-                ['key' => 'my_events', 'section' => 'Events', 'href' => 'events.php#my-signups', 'icon' => 'bi-calendar-check', 'label' => 'My Registrations'],
+                ['key' => 'my_events', 'section' => 'Events', 'href' => 'events.php', 'icon' => 'bi-calendar-check', 'label' => 'My Registrations'],
                 ['key' => 'polls', 'section' => 'Community', 'href' => 'polls.php', 'icon' => 'bi-bar-chart-steps', 'label' => 'Community Polls'],
                 ['key' => 'feedback', 'section' => 'Community', 'href' => 'feedback.php', 'icon' => 'bi-chat-left-text', 'label' => 'Feedback / Concerns'],
                 ['key' => 'profile', 'section' => 'Account', 'href' => 'activity.php', 'icon' => 'bi-person-circle', 'label' => 'Profile'],
