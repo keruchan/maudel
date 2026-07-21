@@ -1,0 +1,660 @@
+/* ============================================================
+   Shared auth styling for SKed login and demo access.
+   Palette and typography mirror the protected dashboard
+   (css/dashboard.css): civic indigo / iris, cool canvas, Sora
+   display + Plus Jakarta Sans body, so the public entry points
+   feel like the same product as the internal system.
+
+   Layout: centered card — a dark "briefing" pane on the left and
+   a light form pane on the right, contained inside one rounded,
+   shadowed card in the middle of the viewport.
+   ============================================================ */
+
+:root {
+    --night-950: #14133b;
+    --night-900: #1e1b4b;
+    --night-800: #2b2870;
+    --civic-600: #4338ca;
+    --civic-500: #4f46e5;
+    --iris-400: #818cf8;
+    --mist-100: #eef0fb;
+    --canvas: #f5f5fb;
+    --paper: #ffffff;
+    --line: #e2e2f0;
+    --ink-900: #1f2033;
+    --ink-600: #5b5c78;
+    --ink-400: #8a8ba6;
+    --gold: #b45309;
+    --gold-tint: #fdecc8;
+    --coral: #c02748;
+    --coral-tint: #fbdbe3;
+    --sky: #0369a1;
+    --sky-tint: #d6ebf7;
+    --radius-md: 10px;
+    --radius-lg: 22px;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+html, body {
+    height: 100%;
+}
+
+body {
+    min-height: 100vh;
+    margin: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: clamp(0.75rem, 2vh, 2.5rem) 1.25rem;
+    font-family: "Plus Jakarta Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    color: var(--ink-900);
+    background: var(--canvas);
+    -webkit-font-smoothing: antialiased;
+}
+
+.auth-shell {
+    width: 100%;
+    max-width: 960px;
+    display: grid;
+    grid-template-columns: minmax(0, 5fr) minmax(0, 4fr);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    background: var(--paper);
+    box-shadow: 0 30px 70px -40px rgba(20, 19, 59, 0.5), 0 2px 6px rgba(20, 19, 59, 0.05);
+    animation: authRise 0.5s ease both;
+}
+
+/* Registration form carries more fields than login, so it gets a wider
+   card and a narrower brief pane instead of the login page's 5fr/4fr. */
+.auth-shell-wide {
+    max-width: 1160px;
+    grid-template-columns: minmax(0, 4fr) minmax(0, 6fr);
+}
+
+@keyframes authRise {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .auth-shell { animation: none; }
+}
+
+.auth-pane {
+    position: relative;
+    padding: 2.4rem clamp(1.5rem, 3vw, 2.75rem);
+    display: flex;
+    flex-direction: column;
+}
+
+/* ---- Left: dark briefing pane ---- */
+.auth-pane-brief {
+    color: #ebeafb;
+    overflow: hidden;
+    justify-content: space-between;
+    gap: 2.5rem;
+    background:
+        radial-gradient(90% 60% at 100% 0%, rgba(79, 70, 229, 0.45), transparent 55%),
+        linear-gradient(160deg, var(--night-900), var(--night-950));
+}
+
+.pane-grid {
+    position: absolute;
+    inset: 0;
+    background-image: radial-gradient(rgba(255, 255, 255, 0.14) 1px, transparent 1px);
+    background-size: 22px 22px;
+    -webkit-mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.9), transparent 75%);
+    mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.9), transparent 75%);
+    pointer-events: none;
+}
+
+.pane-ring {
+    position: absolute;
+    right: -120px;
+    bottom: -140px;
+    width: 340px;
+    height: 340px;
+    border: 34px solid rgba(255, 255, 255, 0.05);
+    border-radius: 50%;
+    pointer-events: none;
+}
+
+.pane-ring::before {
+    content: "";
+    position: absolute;
+    inset: 60px;
+    border: 2px dashed rgba(255, 255, 255, 0.14);
+    border-radius: 50%;
+}
+
+.brand-row {
+    position: relative;
+    z-index: 1;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.85rem;
+    color: #fff;
+    width: fit-content;
+}
+
+.brand-seal {
+    width: 46px;
+    height: 46px;
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    color: #fff;
+    font-size: 1.2rem;
+    background: radial-gradient(circle at 35% 30%, var(--civic-600), var(--night-900) 72%);
+    border: 2px dashed rgba(255, 255, 255, 0.55);
+    box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.08);
+}
+
+.brand-word {
+    font-family: "Sora", "Segoe UI", system-ui, sans-serif;
+    font-size: 1.15rem;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+    line-height: 1.05;
+}
+
+.brand-sub {
+    color: #b9bce0;
+    font-size: 0.72rem;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    margin-top: 0.15rem;
+}
+
+.pane-body {
+    position: relative;
+    z-index: 1;
+    max-width: 30rem;
+}
+
+.pane-eyebrow {
+    font-size: 0.74rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--iris-400);
+    margin-bottom: 0.6rem;
+}
+
+.pane-headline {
+    font-family: "Sora", "Segoe UI", system-ui, sans-serif;
+    font-size: clamp(1.5rem, 2.4vw, 2rem);
+    font-weight: 600;
+    line-height: 1.2;
+    color: #fff;
+    margin-bottom: 2rem;
+}
+
+.feature-list {
+    display: flex;
+    flex-direction: column;
+    gap: 1.15rem;
+    margin: 0;
+    padding: 0;
+}
+
+.feature-list li {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.9rem;
+}
+
+.feature-icon {
+    flex-shrink: 0;
+    width: 40px;
+    height: 40px;
+    border-radius: 12px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.05rem;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+}
+
+.feature-icon-gold { color: var(--gold-tint); }
+.feature-icon-sky { color: var(--sky-tint); }
+.feature-icon-coral { color: var(--coral-tint); }
+
+.feature-title {
+    display: block;
+    font-weight: 700;
+    font-size: 0.95rem;
+    color: #fff;
+}
+
+.feature-desc {
+    display: block;
+    font-size: 0.83rem;
+    color: #b9bce0;
+    margin-top: 0.1rem;
+}
+
+.pane-footnote {
+    margin: 1.15rem 0 0;
+    max-width: 25rem;
+    color: #d8d9f2;
+    font-size: 0.82rem;
+    line-height: 1.55;
+}
+
+.pane-roles {
+    position: relative;
+    z-index: 1;
+    padding-top: 1.75rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.16);
+}
+
+.pane-roles-label {
+    font-size: 0.72rem;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: #b9bce0;
+    margin: 0 0 0.65rem;
+}
+
+.role-pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.role-pill {
+    font-size: 0.78rem;
+    font-weight: 600;
+    padding: 0.35rem 0.75rem;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    color: #ebeafb;
+}
+
+/* ---- Right: form pane ---- */
+.auth-pane-form {
+    background:
+        radial-gradient(circle, var(--line) 1px, transparent 1px) 0 0 / 26px 26px,
+        var(--paper);
+    align-items: center;
+    justify-content: center;
+}
+
+.form-wrap {
+    width: 100%;
+    max-width: 24rem;
+}
+
+.auth-shell-wide .form-wrap {
+    max-width: 32rem;
+}
+
+.section-label {
+    color: var(--civic-600);
+    font-size: 0.74rem;
+    font-weight: 700;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+}
+
+.auth-title {
+    font-family: "Sora", "Segoe UI", system-ui, sans-serif;
+    font-size: 1.7rem;
+    font-weight: 600;
+    color: var(--ink-900);
+    line-height: 1.15;
+}
+
+.form-label {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--ink-600);
+}
+
+.form-control,
+.form-select {
+    border-color: var(--line);
+    border-width: 0 0 2px 0;
+    border-radius: 0;
+    padding: 0.72rem 0.1rem;
+    font-size: 0.95rem;
+    background: transparent;
+}
+
+.form-control:focus,
+.form-select:focus {
+    border-color: var(--civic-600);
+    box-shadow: none;
+    background: transparent;
+}
+
+.form-control:disabled {
+    color: var(--ink-400);
+}
+
+/* Icon-affixed inputs (login) */
+.input-affix {
+    position: relative;
+}
+
+.input-affix > i:first-child {
+    position: absolute;
+    left: 0.1rem;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--ink-400);
+    font-size: 1rem;
+    pointer-events: none;
+}
+
+.input-affix > i:first-child ~ .form-control {
+    padding-left: 1.7rem;
+}
+
+.input-affix > i:first-child ~ .form-select {
+    padding-left: 1.7rem;
+}
+
+/* Registration has more fields, so this variant keeps the same design
+   language while fitting comfortably in a single desktop viewport. */
+.auth-shell-wide .auth-pane {
+    padding: clamp(1.05rem, 2.25vh, 1.8rem) clamp(1.15rem, 2.5vw, 2.2rem);
+}
+
+.auth-shell-wide .form-wrap {
+    max-width: 38rem;
+}
+
+.auth-shell-wide .section-label {
+    margin-bottom: 0.25rem !important;
+}
+
+.auth-shell-wide .auth-title {
+    font-size: 1.44rem;
+}
+
+.auth-shell-wide .auth-title + p {
+    margin-bottom: 1rem !important;
+    font-size: 0.88rem;
+    line-height: 1.45;
+}
+
+.auth-shell-wide .row {
+    --bs-gutter-x: 1rem;
+    --bs-gutter-y: 0.7rem;
+}
+
+.auth-shell-wide .form-label {
+    margin-bottom: 0.2rem;
+    font-size: 0.78rem;
+}
+
+.auth-shell-wide .form-control,
+.auth-shell-wide .form-select {
+    min-height: 38px;
+    padding-top: 0.45rem;
+    padding-bottom: 0.45rem;
+    font-size: 0.86rem;
+}
+
+.auth-shell-wide .field-group small {
+    display: block;
+    margin-top: 0.15rem;
+    font-size: 0.7rem;
+    line-height: 1.25;
+}
+
+.auth-shell-wide .auth-pane-brief {
+    justify-content: flex-start;
+    gap: 0;
+}
+
+.auth-shell-wide .brand-seal {
+    width: 40px;
+    height: 40px;
+    font-size: 1rem;
+}
+
+.auth-shell-wide .brand-word {
+    font-size: 1.05rem;
+}
+
+.auth-shell-wide .brand-sub {
+    font-size: 0.64rem;
+}
+
+.auth-shell-wide .pane-eyebrow {
+    margin-bottom: 0.45rem;
+    font-size: 0.68rem;
+}
+
+.auth-shell-wide .pane-body {
+    margin-top: clamp(4.75rem, 12vh, 6.2rem);
+}
+
+.auth-shell-wide .pane-headline {
+    margin-bottom: 1.2rem;
+    font-size: clamp(1.34rem, 2vw, 1.72rem);
+}
+
+.auth-shell-wide .feature-list {
+    gap: 0.78rem;
+}
+
+.auth-shell-wide .feature-list li {
+    gap: 0.72rem;
+}
+
+.auth-shell-wide .feature-icon {
+    width: 34px;
+    height: 34px;
+    border-radius: 10px;
+    font-size: 0.92rem;
+}
+
+.auth-shell-wide .feature-title {
+    font-size: 0.88rem;
+}
+
+.auth-shell-wide .feature-desc {
+    font-size: 0.74rem;
+    line-height: 1.35;
+}
+
+.auth-shell-wide .pane-footnote {
+    margin-top: 1rem;
+    font-size: 0.76rem;
+    line-height: 1.45;
+}
+
+.auth-shell-wide .pane-roles {
+    padding-top: 1rem;
+}
+
+.auth-shell-wide .pane-roles-label {
+    margin-bottom: 0.45rem;
+    font-size: 0.66rem;
+}
+
+.auth-shell-wide .verify-note {
+    margin: 0.85rem 0 !important;
+    padding: 0.56rem 0.7rem;
+    font-size: 0.74rem;
+    line-height: 1.32;
+}
+
+.auth-shell-wide .form-check {
+    margin-bottom: 0.85rem !important;
+}
+
+.auth-shell-wide .form-check-label {
+    line-height: 1.28;
+}
+
+.auth-shell-wide .btn-sked {
+    padding: 0.62rem 1rem;
+}
+
+.auth-shell-wide .auth-switch {
+    margin-top: 0.65rem !important;
+    font-size: 0.8rem;
+}
+
+.btn-sked {
+    --bs-btn-color: #fff;
+    --bs-btn-bg: var(--civic-600);
+    --bs-btn-border-color: var(--civic-600);
+    --bs-btn-hover-color: #fff;
+    --bs-btn-hover-bg: var(--night-800);
+    --bs-btn-hover-border-color: var(--night-800);
+    --bs-btn-focus-shadow-rgb: 67, 56, 202;
+    border-radius: 999px;
+    font-weight: 600;
+    padding: 0.8rem 1rem;
+    box-shadow: 0 10px 24px -14px rgba(67, 56, 202, 0.9);
+}
+
+.auth-link {
+    color: var(--civic-600);
+    font-weight: 700;
+    text-decoration: none;
+}
+
+.auth-link:hover {
+    color: var(--night-900);
+    text-decoration: underline;
+}
+
+.auth-switch {
+    font-size: 0.87rem;
+    color: var(--ink-600);
+}
+
+.form-check-input:checked {
+    background-color: var(--civic-600);
+    border-color: var(--civic-600);
+}
+
+.form-check-input:focus {
+    border-color: var(--civic-600);
+    box-shadow: 0 0 0 0.2rem rgba(67, 56, 202, 0.15);
+}
+
+/* ---- Register page: verification-status note ---- */
+.verify-note {
+    display: flex;
+    gap: 0.6rem;
+    padding: 0.85rem 1rem;
+    border: 1px solid var(--gold-tint);
+    border-radius: var(--radius-md);
+    background: var(--gold-tint);
+    color: #8a5a12;
+    font-size: 0.82rem;
+    line-height: 1.45;
+}
+
+.verify-note i {
+    flex-shrink: 0;
+    margin-top: 0.1rem;
+    color: var(--gold);
+}
+
+.auth-note {
+    background: var(--paper);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-md);
+    padding: 1rem 1.1rem;
+}
+
+.auth-note .note-title {
+    color: var(--ink-900);
+    font-weight: 700;
+    font-size: 0.85rem;
+    margin-bottom: 0.6rem;
+}
+
+.credential-list {
+    display: flex;
+    flex-direction: column;
+}
+
+.credential-list li {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    padding: 0.45rem 0;
+    font-size: 0.85rem;
+    border-top: 1px dashed var(--line);
+}
+
+.credential-list li:first-child {
+    border-top: 0;
+    padding-top: 0;
+}
+
+.cred-role {
+    font-weight: 600;
+    color: var(--ink-900);
+}
+
+.cred-tag {
+    margin-left: auto;
+    color: var(--ink-400);
+    font-size: 0.78rem;
+}
+
+a:focus-visible,
+button:focus-visible,
+.form-control:focus-visible {
+    outline: 2.5px solid var(--civic-600);
+    outline-offset: 2px;
+}
+
+/* Numbered chips for the demo-credentials note on the login screen. */
+.badge-num {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
+    border-radius: 50%;
+    background: var(--civic-600);
+    color: #fff;
+    font-size: 0.72rem;
+    font-weight: 700;
+}
+
+@media (max-width: 991.98px) {
+    .auth-shell {
+        grid-template-columns: 1fr;
+        max-width: 32rem;
+    }
+
+    .auth-pane-brief {
+        padding-bottom: 2.5rem;
+    }
+
+    .pane-ring {
+        display: none;
+    }
+}
+
+@media (max-width: 575.98px) {
+    body {
+        padding: 1.25rem 0.85rem;
+    }
+
+    .auth-shell {
+        border-radius: var(--radius-md);
+    }
+}
