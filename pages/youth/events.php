@@ -29,6 +29,8 @@ $isVerified = sked_is_verified();
 $isDemo = $userId < 1000;
 
 $flash = ['type' => '', 'msg' => ''];
+$reopenEventId = null;
+$formErrors = [];
 
 if (empty($_SESSION['csrf_yevents_token'])) {
     $_SESSION['csrf_yevents_token'] = bin2hex(random_bytes(32));
@@ -51,10 +53,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $r = sked_cancel_participation($userId, $eventId);
         $flash = $r['ok'] ? ['type' => 'info', 'msg' => 'Your sign-up was cancelled.'] : ['type' => 'danger', 'msg' => e($r['error'])];
     } elseif ($action === 'evaluate') {
-        $r = sked_submit_evaluation($userId, $eventId, (int) ($_POST['rating'] ?? 0), (string) ($_POST['comments'] ?? ''));
-        $flash = $r['ok'] ? ['type' => 'success', 'msg' => 'Thanks for your feedback! Participation points awarded.'] : ['type' => 'danger', 'msg' => e($r['error'])];
+        $answers = [];
+        foreach (array_keys(sked_evaluation_criteria()) as $key) {
+            $answers[$key] = (int) ($_POST['criteria'][$key] ?? 0);
+        }
+        $r = sked_submit_evaluation($userId, $eventId, $answers, (string) ($_POST['comments'] ?? ''));
+        if ($r['ok']) {
+            $flash = ['type' => 'success', 'msg' => 'Thanks for your feedback! Participation points awarded.'];
+        } else {
+            $formErrors = [$r['error']];
+            $reopenEventId = $eventId;
+        }
     }
 }
+
+// Keep everything the user answered when an evaluation modal comes back with errors.
+sked_form_retain($reopenEventId !== null);
 
 $events = ($isVerified && $barangayId > 0) ? sked_events_for_youth($userId, $barangayId) : [];
 $ongoingEvents = array_values(array_filter($events, static fn ($e) => sked_event_time_bucket($e) === 'ongoing'));
@@ -217,7 +231,7 @@ $renderBrowseTable = function (string $title, array $list, string $icon, string 
                     </p>
                     <div class="table-responsive">
                         <table class="table align-middle mb-0">
-                            <thead><tr><th>Event</th><th>Attended</th><th>Rating &amp; comments</th></tr></thead>
+                            <thead><tr><th>Event</th><th>Attended</th><th>Evaluation</th></tr></thead>
                             <tbody>
                             <?php foreach ($pendingEvaluations as $pe): ?>
                                 <tr>
@@ -226,18 +240,8 @@ $renderBrowseTable = function (string $title, array $list, string $icon, string 
                                         <span class="badge text-bg-light text-capitalize"><?php echo e((string) $pe['status']); ?></span>
                                     </td>
                                     <td class="small text-secondary"><?php echo e($pe['attended_at'] ? date('M j, Y g:i A', strtotime((string) $pe['attended_at'])) : '—'); ?></td>
-                                    <td style="min-width:280px;">
-                                        <form method="post" action="events.php" class="d-flex flex-wrap align-items-center gap-1">
-                                            <input type="hidden" name="csrf_token" value="<?php echo e((string) $_SESSION['csrf_yevents_token']); ?>">
-                                            <input type="hidden" name="action" value="evaluate">
-                                            <input type="hidden" name="event_id" value="<?php echo (int) $pe['id']; ?>">
-                                            <select name="rating" class="form-select form-select-sm" style="width:auto;" required aria-label="Rating">
-                                                <option value="">Rate…</option>
-                                                <?php for ($i = 5; $i >= 1; $i--): ?><option value="<?php echo $i; ?>"><?php echo $i; ?> — <?php echo ['', 'Poor', 'Fair', 'Good', 'Very good', 'Excellent'][$i]; ?></option><?php endfor; ?>
-                                            </select>
-                                            <input type="text" name="comments" class="form-control form-control-sm" style="width:170px;" maxlength="500" placeholder="Comment (optional)">
-                                            <button class="btn btn-sm btn-sked" type="submit"><i class="bi bi-check-lg me-1"></i>Finalize</button>
-                                        </form>
+                                    <td>
+                                        <button type="button" class="btn btn-sm btn-sked" data-bs-toggle="modal" data-bs-target="#evalModal<?php echo (int) $pe['id']; ?>"><i class="bi bi-clipboard2-check me-1"></i>Evaluate</button>
                                     </td>
                                 </tr>
                             <?php endforeach; ?>
@@ -258,7 +262,7 @@ $renderBrowseTable = function (string $title, array $list, string $icon, string 
                 <?php else: ?>
                     <div class="table-responsive">
                         <table class="table align-middle" id="pastEventsTable">
-                            <thead><tr><th>Event</th><th>Date</th><th>My Status</th><th>Rating &amp; comments <span class="fw-normal text-secondary small">(finalizes attendance)</span></th></tr></thead>
+                            <thead><tr><th>Event</th><th>Date</th><th>My Status</th><th>Evaluation <span class="fw-normal text-secondary small">(finalizes attendance)</span></th></tr></thead>
                             <tbody>
                             <?php foreach ($pastParticipations as $p): ?>
                                 <?php $rateInfo = $evaluableById[(int) $p['id']] ?? null; ?>
@@ -281,21 +285,13 @@ $renderBrowseTable = function (string $title, array $list, string $icon, string 
                                         <?php if ($rateInfo === null): ?>
                                             <span class="small text-secondary"><?php echo (string) $p['my_status'] === 'attended' ? 'Evaluation not open' : '—'; ?></span>
                                         <?php elseif ($rateInfo['my_rating'] !== null): ?>
-                                            <span class="badge text-bg-success d-block mb-1" style="width:fit-content;"><i class="bi bi-star-fill me-1"></i>You rated <?php echo (int) $rateInfo['my_rating']; ?>/5</span>
+                                            <span class="badge text-bg-success d-block mb-1" style="width:fit-content;"><i class="bi bi-star-fill me-1"></i>You rated <?php echo number_format((float) $rateInfo['my_rating'], 2); ?>/5</span>
                                             <?php if (!empty($rateInfo['my_comments'])): ?><div class="small text-secondary fst-italic">"<?php echo e((string) $rateInfo['my_comments']); ?>"</div><?php endif; ?>
                                         <?php else: ?>
                                             <span class="badge text-bg-warning mb-1"><i class="bi bi-exclamation-circle me-1"></i>Needs evaluation</span>
-                                            <form method="post" action="events.php" class="d-flex flex-wrap align-items-center gap-1">
-                                                <input type="hidden" name="csrf_token" value="<?php echo e((string) $_SESSION['csrf_yevents_token']); ?>">
-                                                <input type="hidden" name="action" value="evaluate">
-                                                <input type="hidden" name="event_id" value="<?php echo (int) $p['id']; ?>">
-                                                <select name="rating" class="form-select form-select-sm" style="width:auto;" required aria-label="Rating">
-                                                    <option value="">Rate…</option>
-                                                    <?php for ($i = 5; $i >= 1; $i--): ?><option value="<?php echo $i; ?>"><?php echo $i; ?> — <?php echo ['', 'Poor', 'Fair', 'Good', 'Very good', 'Excellent'][$i]; ?></option><?php endfor; ?>
-                                                </select>
-                                                <input type="text" name="comments" class="form-control form-control-sm" style="width:150px;" maxlength="500" placeholder="Comment (optional)">
-                                                <button class="btn btn-sm btn-sked" type="submit"><i class="bi bi-check-lg me-1"></i>Finalize</button>
-                                            </form>
+                                            <div>
+                                                <button type="button" class="btn btn-sm btn-sked" data-bs-toggle="modal" data-bs-target="#evalModal<?php echo (int) $p['id']; ?>"><i class="bi bi-clipboard2-check me-1"></i>Evaluate</button>
+                                            </div>
                                         <?php endif; ?>
                                     </td>
                                 </tr>
@@ -310,10 +306,61 @@ $renderBrowseTable = function (string $title, array $list, string $icon, string 
                 $renderBrowseTable('Upcoming Events', $upcomingEvents, 'bi-calendar-event', 'No upcoming events for your barangay right now. Check back soon.', 'upcomingEventsTable');
             ?>
 
+            <?php if (!empty($pendingEvaluations)): $criteria = sked_evaluation_criteria(); $scaleLabels = sked_evaluation_scale_labels(); ?>
+                <?php foreach ($pendingEvaluations as $pe): $isReopening = $reopenEventId === (int) $pe['id']; ?>
+                    <div class="modal fade" id="evalModal<?php echo (int) $pe['id']; ?>" tabindex="-1" aria-labelledby="evalModalLabel<?php echo (int) $pe['id']; ?>" aria-hidden="true"<?php echo $isReopening ? ' data-autoshow="1"' : ''; ?>>
+                        <div class="modal-dialog modal-lg modal-dialog-scrollable">
+                            <div class="modal-content create-event-modal">
+                                <div class="modal-header">
+                                    <h2 class="modal-title h5" id="evalModalLabel<?php echo (int) $pe['id']; ?>">Evaluate: <?php echo e((string) $pe['title']); ?></h2>
+                                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                                </div>
+                                <form method="post" action="events.php">
+                                    <div class="modal-body">
+                                        <input type="hidden" name="csrf_token" value="<?php echo e((string) $_SESSION['csrf_yevents_token']); ?>">
+                                        <input type="hidden" name="action" value="evaluate">
+                                        <input type="hidden" name="event_id" value="<?php echo (int) $pe['id']; ?>">
+
+                                        <?php if ($isReopening): ?><?php sked_render_form_errors($formErrors); ?><?php endif; ?>
+
+                                        <p class="small text-secondary">Rate how much you agree with each statement, then share any suggestions at the end. Submitting finalizes your attendance and awards evaluation points.</p>
+
+                                        <?php $currentGroup = null; foreach ($criteria as $key => $c): ?>
+                                            <?php if ($c['group'] !== $currentGroup): $currentGroup = $c['group']; ?>
+                                                <h3 class="h6 text-secondary text-uppercase small mt-3 mb-1"><?php echo e($currentGroup); ?></h3>
+                                            <?php endif; ?>
+                                            <div class="snapshot-row">
+                                                <span><?php echo e($c['text']); ?></span>
+                                                <select name="criteria[<?php echo e($key); ?>]" class="form-select form-select-sm" style="width:auto;" required aria-label="<?php echo e($c['text']); ?>">
+                                                    <option value="">Select…</option>
+                                                    <?php for ($i = 5; $i >= 1; $i--): ?>
+                                                        <option value="<?php echo $i; ?>" <?php echo ($isReopening && sked_old_selected("criteria[$key]", (string) $i)) ? 'selected' : ''; ?>><?php echo $i; ?> — <?php echo e($scaleLabels[$i]); ?></option>
+                                                    <?php endfor; ?>
+                                                </select>
+                                            </div>
+                                        <?php endforeach; ?>
+
+                                        <div class="mt-3">
+                                            <label for="evalComments<?php echo (int) $pe['id']; ?>" class="form-label small">What suggestions do you have to improve future SK events? <span class="text-secondary fw-normal">(optional)</span></label>
+                                            <textarea id="evalComments<?php echo (int) $pe['id']; ?>" name="comments" class="form-control form-control-sm" rows="3" maxlength="1000"><?php echo e($isReopening ? sked_old('comments') : ''); ?></textarea>
+                                        </div>
+                                    </div>
+                                    <div class="modal-footer">
+                                        <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+                                        <button type="submit" class="btn btn-sked btn-sm"><i class="bi bi-check-lg me-1"></i>Submit Evaluation</button>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                <?php endforeach; ?>
+            <?php endif; ?>
+
             <?php endif; ?>
         </main>
     </div>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <?php sked_render_autoshow_modals_script(); ?>
     <script src="../../js/table-tools.js"></script>
     <script>
         ['ongoingEventsTable', 'upcomingEventsTable'].forEach(function (id) {

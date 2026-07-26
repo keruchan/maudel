@@ -70,6 +70,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $roster = sked_event_roster($eventId);
 $counts = sked_participant_counts($eventId);
 $rating = sked_event_rating($eventId);
+$evalBreakdown = sked_event_evaluation_breakdown($eventId);
 $nextStatuses = sked_event_next_statuses((string) $event['status']);
 $todayLabel = date('l, F j, Y');
 $canAttend = in_array($event['status'], SKED_ATTENDANCE_OPEN_STATUSES, true);
@@ -93,6 +94,10 @@ $turnoutPrediction = in_array($event['status'], ['draft', 'published', 'confirme
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
     <link rel="stylesheet" href="../../css/dashboard.css?v=1">
+    <style>
+        .level-progress { height:8px; border-radius:999px; background:#e5e7f2; overflow:hidden; }
+        .level-progress > div { height:100%; background:linear-gradient(90deg,#4338ca,#818cf8); }
+    </style>
 </head>
 <body>
     <a href="#main-content" class="skip-link">Skip to main content</a>
@@ -242,6 +247,28 @@ $turnoutPrediction = in_array($event['status'], ['draft', 'published', 'confirme
                     </div>
                 </div>
             </div>
+
+            <?php $evalAnswered = array_filter($evalBreakdown, static fn ($r) => $r['n'] > 0); ?>
+            <?php if (!empty($evalAnswered)): ?>
+                <div class="docket-panel mt-4">
+                    <div class="section-heading">
+                        <h2>Evaluation Breakdown</h2>
+                        <span class="section-note"><?php echo (int) $rating['count']; ?> evaluation<?php echo $rating['count'] === 1 ? '' : 's'; ?></span>
+                    </div>
+                    <?php $currentGroup = null; foreach ($evalBreakdown as $row): ?>
+                        <?php if ($row['group'] !== $currentGroup): $currentGroup = $row['group']; ?>
+                            <h3 class="h6 text-secondary text-uppercase small mt-3 mb-2"><?php echo e($currentGroup); ?></h3>
+                        <?php endif; ?>
+                        <div class="mb-2">
+                            <div class="d-flex justify-content-between small mb-1">
+                                <span><?php echo e($row['text']); ?></span>
+                                <span class="fw-semibold text-nowrap ms-2"><?php echo $row['avg'] !== null ? number_format($row['avg'], 1) . '/5' : 'No data'; ?></span>
+                            </div>
+                            <div class="level-progress"><div style="width:<?php echo $row['avg'] !== null ? round($row['avg'] / 5 * 100) : 0; ?>%"></div></div>
+                        </div>
+                    <?php endforeach; ?>
+                </div>
+            <?php endif; ?>
         </main>
     </div>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>

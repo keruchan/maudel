@@ -150,19 +150,12 @@ $pendingEvaluations = (!$isDemo && $isVerified) ? sked_pending_evaluations_for_y
                 csrf: <?php echo json_encode((string) $_SESSION['csrf_attendance_token']); ?>,
                 api: '../api/attendance.php',
                 onResult: function (data) {
-                    out.classList.remove('d-none', 'alert-success', 'alert-warning', 'alert-danger');
-                    out.classList.add('alert');
+                    SkedScanner.renderResult(out, data, data.result === 'marked' ? {
+                        linkHref: 'events.php',
+                        linkText: 'Submit your evaluation now'
+                    } : {});
                     if (data.result === 'marked') {
-                        out.classList.add('alert-success');
-                        out.innerHTML = '<i class="bi bi-check-circle-fill me-1"></i>' + data.message +
-                            ' <a class="alert-link" href="events.php">Submit your evaluation now</a> to finalize it.';
                         scanner.stop();
-                    } else if (data.result === 'duplicate') {
-                        out.classList.add('alert-warning');
-                        out.textContent = data.message;
-                    } else {
-                        out.classList.add('alert-danger');
-                        out.textContent = data.message || 'That code was not accepted.';
                     }
                 },
                 onStateChange: function (running) {

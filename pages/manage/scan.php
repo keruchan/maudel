@@ -180,6 +180,8 @@ $attendanceOpen = $event !== null && in_array((string) $event['status'], SKED_AT
                             <i class="bi bi-camera-video-off me-1"></i><span id="cameraUnavailableMsg"></span>
                         </div>
 
+                        <div id="scanResult" class="d-none" role="status" aria-live="polite"></div>
+
                         <div class="scan-viewport mb-3" id="reader"></div>
 
                         <div class="d-flex flex-wrap gap-2 mb-3">
@@ -256,6 +258,7 @@ $attendanceOpen = $event !== null && in_array((string) $event['status'], SKED_AT
             var feedEmpty = document.getElementById('feedEmpty');
             var btnStart = document.getElementById('btnStart');
             var btnStop = document.getElementById('btnStop');
+            var scanResult = document.getElementById('scanResult');
 
             function pushFeed(data) {
                 if (feedEmpty) { feedEmpty.remove(); feedEmpty = null; }
@@ -270,7 +273,7 @@ $attendanceOpen = $event !== null && in_array((string) $event['status'], SKED_AT
                 title.textContent = data.youth_name || (data.result === 'marked' ? 'Marked' : 'Not accepted');
                 var sub = document.createElement('div');
                 sub.className = 'small text-secondary';
-                sub.textContent = (data.message || '') + ' · ' + new Date().toLocaleTimeString();
+                sub.textContent = (data.kk_id_no ? data.kk_id_no + ' · ' : '') + new Date().toLocaleTimeString();
                 body.appendChild(title);
                 body.appendChild(sub);
                 row.appendChild(dot);
@@ -291,7 +294,10 @@ $attendanceOpen = $event !== null && in_array((string) $event['status'], SKED_AT
                 eventId: <?php echo (int) $eventId; ?>,
                 csrf: <?php echo json_encode((string) $_SESSION['csrf_attendance_token']); ?>,
                 api: '../api/attendance.php',
-                onResult: pushFeed,
+                onResult: function (data) {
+                    SkedScanner.renderResult(scanResult, data);
+                    pushFeed(data);
+                },
                 onStateChange: function (running) {
                     btnStart.classList.toggle('d-none', running);
                     btnStop.classList.toggle('d-none', !running);

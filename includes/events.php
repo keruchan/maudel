@@ -43,6 +43,45 @@ function sked_evaluation_open_statuses_sql(): string
     return "'" . implode("','", SKED_EVALUATION_OPEN_STATUSES) . "'";
 }
 
+/**
+ * The fixed set of Likert-scored evaluation criteria (1=Strongly Disagree ..
+ * 5=Strongly Agree), grouped for display. Keys are stable identifiers stored
+ * in event_evaluation_answers.question_key — reordering/relabeling here is
+ * safe, but renaming or removing a key orphans any already-submitted answers
+ * under it (same tradeoff sked_points_scheme() action keys already accept).
+ *
+ * @return array<string,array{group:string,text:string}>
+ */
+function sked_evaluation_criteria(): array
+{
+    return [
+        'objectives_clear' => ['group' => 'Program Content', 'text' => "The event's objectives were clearly explained."],
+        'content_relevant' => ['group' => 'Program Content', 'text' => 'The topics/activities were relevant to youth needs and interests.'],
+        'learned_something' => ['group' => 'Program Content', 'text' => 'I learned something new or useful.'],
+        'content_as_promoted' => ['group' => 'Program Content', 'text' => 'The content matched what was promoted/advertised.'],
+
+        'well_organized' => ['group' => 'Organization & Logistics', 'text' => 'The event was well-organized overall.'],
+        'started_ended_on_time' => ['group' => 'Organization & Logistics', 'text' => 'The event started and ended on time.'],
+        'venue_adequate' => ['group' => 'Organization & Logistics', 'text' => 'The venue/facilities were adequate and comfortable.'],
+        'registration_easy' => ['group' => 'Organization & Logistics', 'text' => 'Registration/check-in was quick and easy.'],
+
+        'facilitators_knowledgeable' => ['group' => 'Facilitators & Delivery', 'text' => 'The speakers/facilitators were knowledgeable.'],
+        'facilitators_engaging' => ['group' => 'Facilitators & Delivery', 'text' => 'The speakers/facilitators were engaging and easy to understand.'],
+        'enough_participation' => ['group' => 'Facilitators & Delivery', 'text' => 'I had enough opportunity to participate or ask questions.'],
+
+        'met_expectations' => ['group' => 'Impact & Satisfaction', 'text' => 'The event met my expectations.'],
+        'more_active' => ['group' => 'Impact & Satisfaction', 'text' => 'This event will help me be more active in SK/community activities.'],
+        'would_recommend' => ['group' => 'Impact & Satisfaction', 'text' => 'I would recommend this event to other youth.'],
+        'overall_satisfied' => ['group' => 'Impact & Satisfaction', 'text' => 'Overall, I am satisfied with this event.'],
+    ];
+}
+
+/** Display labels for the 1-5 Likert scale used by every evaluation criterion. */
+function sked_evaluation_scale_labels(): array
+{
+    return [1 => 'Strongly Disagree', 2 => 'Disagree', 3 => 'Neutral', 4 => 'Agree', 5 => 'Strongly Agree'];
+}
+
 /** 32-char public share token for a promotable event link. */
 function sked_generate_share_token(): string
 {
@@ -866,7 +905,7 @@ function sked_mark_attendance(int $actorId, int $eventId, int $userId, bool $pre
  * and the evaluation is what finalizes that attendance — so it has to be
  * submittable there and then, not only after the event is closed out.
  */
-function sked_submit_evaluation(int $youthId, int $eventId, int $rating, string $comments = ''): array
+function sked_submit_evaluation(int $youthId, int $eventId, array $answers, string $comments = ''): array
 {
     $event = sked_get_event($eventId);
     if ($event === null) {
@@ -880,17 +919,42 @@ function sked_submit_evaluation(int $youthId, int $eventId, int $rating, string 
     if ($chk->fetchColumn() === false) {
         return ['ok' => false, 'error' => 'Only attendees can evaluate this event.'];
     }
-    $rating = max(1, min(5, $rating));
+
+    $criteria = sked_evaluation_criteria();
+    $clamped = [];
+    foreach (array_keys($criteria) as $key) {
+        if (!isset($answers[$key]) || (int) $answers[$key] < 1) {
+            return ['ok' => false, 'error' => 'Please answer every question.'];
+        }
+        $clamped[$key] = max(1, min(5, (int) $answers[$key]));
+    }
+    $avg = round(array_sum($clamped) / count($clamped), 2);
     $comments = trim($comments);
 
+    $pdo = sked_db();
     try {
-        $stmt = sked_db()->prepare(
+        $pdo->beginTransaction();
+
+        $stmt = $pdo->prepare(
             'INSERT INTO event_evaluations (event_id, user_id, rating, comments)
              VALUES (:e, :u, :r, :c)
-             ON DUPLICATE KEY UPDATE rating = VALUES(rating), comments = VALUES(comments)'
+             ON DUPLICATE KEY UPDATE rating = VALUES(rating), comments = VALUES(comments), id = LAST_INSERT_ID(id)'
         );
-        $stmt->execute(['e' => $eventId, 'u' => $youthId, 'r' => $rating, 'c' => $comments !== '' ? $comments : null]);
+        $stmt->execute(['e' => $eventId, 'u' => $youthId, 'r' => $avg, 'c' => $comments !== '' ? $comments : null]);
+        $evaluationId = (int) $pdo->lastInsertId();
+
+        $ansStmt = $pdo->prepare(
+            'INSERT INTO event_evaluation_answers (evaluation_id, question_key, answer_value)
+             VALUES (:eval, :k, :v)
+             ON DUPLICATE KEY UPDATE answer_value = VALUES(answer_value)'
+        );
+        foreach ($clamped as $key => $value) {
+            $ansStmt->execute(['eval' => $evaluationId, 'k' => $key, 'v' => $value]);
+        }
+
+        $pdo->commit();
     } catch (Throwable $ex) {
+        $pdo->rollBack();
         error_log('sked_submit_evaluation failed: ' . $ex->getMessage());
         return ['ok' => false, 'error' => 'Could not save your evaluation.'];
     }
@@ -906,6 +970,41 @@ function sked_event_rating(int $eventId): array
     $stmt->execute(['e' => $eventId]);
     $row = $stmt->fetch();
     return ['count' => (int) ($row['n'] ?? 0), 'avg' => $row['avg'] !== null ? round((float) $row['avg'], 2) : null];
+}
+
+/**
+ * Per-criterion average score for an event, in sked_evaluation_criteria()
+ * order, for the officer-facing evaluation breakdown. Criteria with zero
+ * answers so far (e.g. no evaluations yet, or evaluations submitted before
+ * this per-criterion table existed) are still listed with avg=null so the
+ * UI can render a "no data" state rather than silently omitting a row.
+ */
+function sked_event_evaluation_breakdown(int $eventId): array
+{
+    $stmt = sked_db()->prepare(
+        'SELECT a.question_key, AVG(a.answer_value) avg, COUNT(*) n
+           FROM event_evaluation_answers a
+           JOIN event_evaluations ev ON ev.id = a.evaluation_id
+          WHERE ev.event_id = :e
+          GROUP BY a.question_key'
+    );
+    $stmt->execute(['e' => $eventId]);
+    $scores = [];
+    foreach ($stmt->fetchAll() as $row) {
+        $scores[(string) $row['question_key']] = ['avg' => round((float) $row['avg'], 2), 'n' => (int) $row['n']];
+    }
+
+    $out = [];
+    foreach (sked_evaluation_criteria() as $key => $c) {
+        $out[] = [
+            'key' => $key,
+            'group' => $c['group'],
+            'text' => $c['text'],
+            'avg' => $scores[$key]['avg'] ?? null,
+            'n' => $scores[$key]['n'] ?? 0,
+        ];
+    }
+    return $out;
 }
 
 /**

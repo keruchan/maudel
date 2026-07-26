@@ -132,5 +132,64 @@
         if (typeof this.opts.onResult === 'function') { this.opts.onResult(data); }
     };
 
+    SkedScanner.resultTone = function (data) {
+        if (data && data.result === 'marked') { return 'success'; }
+        if (data && data.result === 'duplicate') { return 'warning'; }
+        return 'danger';
+    };
+
+    SkedScanner.resultIcon = function (tone) {
+        if (tone === 'success') { return 'bi-check-circle-fill'; }
+        if (tone === 'warning') { return 'bi-exclamation-circle-fill'; }
+        return 'bi-x-circle-fill';
+    };
+
+    SkedScanner.resultTitle = function (data) {
+        if (data && data.result === 'marked') { return 'QR scan successful'; }
+        if (data && data.result === 'duplicate') { return 'Already scanned'; }
+        return 'QR scan unsuccessful';
+    };
+
+    SkedScanner.renderResult = function (target, data, options) {
+        if (!target) { return; }
+        options = options || {};
+        data = data || {};
+
+        var tone = SkedScanner.resultTone(data);
+        var icon = SkedScanner.resultIcon(tone);
+        var message = data.message || 'That code was not accepted.';
+        var title = options.title || SkedScanner.resultTitle(data);
+
+        target.className = 'alert alert-' + tone + ' mb-3';
+        target.setAttribute('role', 'status');
+        target.setAttribute('aria-live', 'polite');
+        target.innerHTML = '<div class="d-flex gap-2 align-items-start">' +
+            '<i class="bi ' + icon + ' mt-1"></i>' +
+            '<div><div class="fw-semibold">' + escapeHtml(title) + '</div>' +
+            '<div>' + escapeHtml(message) + '</div>' +
+            (options.linkHref && options.linkText
+                ? ' <a class="alert-link" href="' + escapeAttr(options.linkHref) + '">' + escapeHtml(options.linkText) + '</a>'
+                : '') +
+            '</div></div>';
+
+        // On a phone the camera viewport fills most of the screen, so this
+        // banner (rendered just above it) can end up scrolled out of view
+        // right when it appears — pull it back on screen instead of leaving
+        // scans to look like they silently succeed with no feedback.
+        if (typeof target.scrollIntoView === 'function') {
+            target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+    };
+
+    function escapeHtml(value) {
+        return String(value).replace(/[&<>"']/g, function (ch) {
+            return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' })[ch];
+        });
+    }
+
+    function escapeAttr(value) {
+        return escapeHtml(value).replace(/`/g, '&#096;');
+    }
+
     global.SkedScanner = SkedScanner;
 })(window);

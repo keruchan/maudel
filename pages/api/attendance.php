@@ -25,20 +25,20 @@ header('Content-Type: application/json');
 
 if (empty($_SESSION['id']) || empty($_SESSION['role'])) {
     http_response_code(401);
-    echo json_encode(['ok' => false, 'message' => 'Not authenticated.']);
+    echo json_encode(['ok' => false, 'result' => 'rejected', 'message' => 'Not authenticated.']);
     exit;
 }
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     http_response_code(405);
-    echo json_encode(['ok' => false, 'message' => 'POST required.']);
+    echo json_encode(['ok' => false, 'result' => 'rejected', 'message' => 'POST required.']);
     exit;
 }
 
 $token = (string) ($_POST['csrf_token'] ?? '');
 if (empty($_SESSION['csrf_attendance_token']) || !hash_equals((string) $_SESSION['csrf_attendance_token'], $token)) {
     http_response_code(403);
-    echo json_encode(['ok' => false, 'message' => 'Security validation failed. Reload the page.']);
+    echo json_encode(['ok' => false, 'result' => 'rejected', 'message' => 'Security validation failed. Reload the page.']);
     exit;
 }
 
@@ -55,7 +55,7 @@ if ($payload === '' || mb_strlen($payload) > 300) {
 if ($action === 'officer_scan') {
     if (!in_array($role, ['sk', 'ppsk', 'dilg'], true)) {
         http_response_code(403);
-        echo json_encode(['ok' => false, 'message' => 'Officials only.']);
+        echo json_encode(['ok' => false, 'result' => 'rejected', 'message' => 'Officials only.']);
         exit;
     }
     $actor = [
@@ -72,7 +72,7 @@ if ($action === 'officer_scan') {
 if ($action === 'self_scan') {
     if ($role !== 'youth') {
         http_response_code(403);
-        echo json_encode(['ok' => false, 'message' => 'Youth accounts only.']);
+        echo json_encode(['ok' => false, 'result' => 'rejected', 'message' => 'Youth accounts only.']);
         exit;
     }
     if (!sked_is_verified()) {
@@ -86,4 +86,4 @@ if ($action === 'self_scan') {
     exit;
 }
 
-echo json_encode(['ok' => false, 'message' => 'Unknown action.']);
+echo json_encode(['ok' => false, 'result' => 'rejected', 'message' => 'Unknown action.']);

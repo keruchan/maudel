@@ -296,7 +296,7 @@ function sked_render_analytics_body(array $bundle, array $distributions, array $
         <div class="tab-pane fade" id="pane-voice" role="tabpanel">
             <div class="alert alert-light border d-flex gap-2 align-items-start mb-3" role="note">
                 <i class="bi bi-info-circle text-primary mt-1"></i>
-                <div><strong>What youth are saying.</strong> Mined from Feedback/Concerns messages and KK Profiling "Suggestions" for <?php echo e($scopeNote); ?>. Sentiment is scored with a transparent Filipino+English keyword lexicon (not a black-box model) — a word is positive/negative because it's on a readable list, and negation ("hindi maganda") is accounted for. Treat it as a quick read, not a verdict; the quotes below let you check it yourself.</div>
+                <div><strong>What youth are saying.</strong> Mined from Feedback/Concerns messages, KK Profiling "Suggestions", and Event Evaluations for <?php echo e($scopeNote); ?>. Sentiment is scored with a transparent Filipino+English keyword lexicon (not a black-box model) — a word is positive/negative because it's on a readable list, and negation ("hindi maganda") is accounted for. Treat it as a quick read, not a verdict; the quotes below let you check it yourself.</div>
             </div>
 
             <?php if ((int) $sentiment['total'] === 0): ?>

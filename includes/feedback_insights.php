@@ -56,6 +56,19 @@ function sked_feedback_corpus(?int $barangayId = null): array
         $rows[] = ['text' => (string) $r['text'], 'source' => 'kk_suggestion', 'barangay_id' => (int) $r['barangay_id'], 'created_at' => (string) $r['created_at']];
     }
 
+    $scopeSql3 = $barangayId !== null ? ' AND u.barangay_id = :bgy' : '';
+    $stmt = $pdo->prepare(
+        "SELECT ev.comments AS text, u.barangay_id, ev.submitted_at AS created_at
+           FROM event_evaluations ev
+           JOIN users u ON u.id = ev.user_id
+          WHERE ev.comments IS NOT NULL AND ev.comments <> ''" . $scopeSql3 . '
+          ORDER BY ev.submitted_at DESC'
+    );
+    $stmt->execute($params);
+    foreach ($stmt->fetchAll() as $r) {
+        $rows[] = ['text' => (string) $r['text'], 'source' => 'event_evaluation', 'barangay_id' => (int) $r['barangay_id'], 'created_at' => (string) $r['created_at']];
+    }
+
     usort($rows, static fn ($a, $b) => strcmp($b['created_at'], $a['created_at']));
     return $rows;
 }
@@ -63,7 +76,11 @@ function sked_feedback_corpus(?int $barangayId = null): array
 /** Human label for a corpus entry's source, for the UI. */
 function sked_feedback_source_label(string $source): string
 {
-    return $source === 'feedback' ? 'Feedback / Concern' : 'KK Suggestion';
+    return match ($source) {
+        'feedback' => 'Feedback / Concern',
+        'event_evaluation' => 'Event Evaluation',
+        default => 'KK Suggestion',
+    };
 }
 
 /**
