@@ -26,6 +26,7 @@ $displayName = !empty($_SESSION['name']) ? (string) $_SESSION['name'] : 'SK Chai
 $todayLabel = date('l, F j, Y');
 
 $flash = ['type' => '', 'msg' => ''];
+$formErrors = [];
 if (empty($_SESSION['csrf_abyip_token'])) {
     $_SESSION['csrf_abyip_token'] = bin2hex(random_bytes(32));
 }
@@ -33,7 +34,8 @@ if (empty($_SESSION['csrf_abyip_token'])) {
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $token = (string) ($_POST['csrf_token'] ?? '');
     if (!hash_equals((string) $_SESSION['csrf_abyip_token'], $token)) {
-        $flash = ['type' => 'danger', 'msg' => 'Security validation failed. Please try again.'];
+        $formErrors = ['Security validation failed. Please try again.'];
+        sked_form_retain(true);
     } else {
         $creator = ['id' => $userId, 'role' => $role, 'name' => $displayName, 'barangay_id' => $barangayId];
         $year = (int) ($_POST['calendar_year'] ?? 0);
@@ -48,7 +50,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             header('Location: ../manage/abyip_plan.php?id=' . $r['plan_id']);
             exit;
         }
-        $flash = ['type' => 'danger', 'msg' => implode(' ', $r['errors'])];
+        $formErrors = $r['errors'];
+        sked_form_retain(true);
     }
 }
 
@@ -104,9 +107,12 @@ $defaultYear = (int) date('Y');
                         <div class="section-heading"><h2>Start a New Year</h2></div>
                         <form method="post" action="abyip.php">
                             <input type="hidden" name="csrf_token" value="<?php echo e((string) $_SESSION['csrf_abyip_token']); ?>">
+
+                            <?php sked_render_form_errors($formErrors, 'The ABYIP could not be created:'); ?>
+
                             <div class="mb-3">
                                 <label for="calendar_year" class="form-label">Calendar year</label>
-                                <input type="number" class="form-control" id="calendar_year" name="calendar_year" value="<?php echo (int) $defaultYear; ?>" min="2020" max="2100" required>
+                                <input type="number" class="form-control" id="calendar_year" name="calendar_year" value="<?php echo e(sked_old('calendar_year', (string) $defaultYear)); ?>" min="2020" max="2100" required>
                             </div>
                             <div class="mb-3">
                                 <label for="cbydp_plan_id" class="form-label">Derive from CBYDP <span class="text-secondary fw-normal">(recommended)</span></label>
@@ -120,7 +126,7 @@ $defaultYear = (int) date('Y');
                             </div>
                             <div class="mb-3">
                                 <label for="prepared_by_name" class="form-label">Prepared by <span class="text-secondary fw-normal">(SK Secretary)</span></label>
-                                <input type="text" class="form-control" id="prepared_by_name" name="prepared_by_name" maxlength="150" placeholder="Full name">
+                                <input type="text" class="form-control" id="prepared_by_name" name="prepared_by_name" maxlength="150" placeholder="Full name" value="<?php echo e(sked_old('prepared_by_name')); ?>">
                             </div>
                             <button type="submit" class="btn btn-sked w-100"><i class="bi bi-plus-lg me-1"></i>Create ABYIP</button>
                         </form>
@@ -133,7 +139,7 @@ $defaultYear = (int) date('Y');
                             <div class="text-center text-secondary py-5"><i class="bi bi-cash-coin fs-1 d-block mb-2"></i>No ABYIP yet. Start one on the left.</div>
                         <?php else: ?>
                             <div class="table-responsive">
-                                <table class="table align-middle">
+                                <table class="table align-middle" id="abyipTable">
                                     <thead><tr><th>Year</th><th>Source</th><th>Status</th><th class="text-end">Action</th></tr></thead>
                                     <tbody>
                                     <?php foreach ($plans as $p): ?>
@@ -155,5 +161,9 @@ $defaultYear = (int) date('Y');
         </main>
     </div>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="../../js/table-tools.js"></script>
+    <script>
+        new SkedTableTools('#abyipTable', { pageSize: 10, filters: [{ label: 'Status' }, { label: 'Source' }] });
+    </script>
 </body>
 </html>

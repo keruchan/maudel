@@ -144,16 +144,13 @@ $sexLabel = static fn (?string $s): string => $s === 'male' ? 'M' : ($s === 'fem
                         <?php echo $statusFilter === '' ? 'No KK members registered under your barangay yet.' : 'No ' . $statusLabel($statusFilter) . ' members.'; ?>
                     </div>
                 <?php else: ?>
-                    <div class="mb-3">
-                        <input type="text" class="form-control" id="memberSearch" placeholder="Search by name or username…" aria-label="Search members">
-                    </div>
                     <div class="table-responsive">
                         <table class="table align-middle" id="membersTable">
                             <thead>
                                 <tr>
                                     <th scope="col">Name</th>
                                     <th scope="col">Age / Sex</th>
-                                    <th scope="col">Contact</th>
+                                    <th scope="col">Contact / Address</th>
                                     <th scope="col">Status</th>
                                     <th scope="col">KK Profile</th>
                                     <th scope="col" class="text-end">Points</th>
@@ -171,6 +168,7 @@ $sexLabel = static fn (?string $s): string => $s === 'male' ? 'M' : ($s === 'fem
                                         <td class="small">
                                             <div><?php echo e((string) ($m['email'] ?? '')); ?></div>
                                             <?php if (!empty($m['mobile'])): ?><div class="text-secondary"><?php echo e((string) $m['mobile']); ?></div><?php endif; ?>
+                                            <div class="text-secondary"><?php echo e((!empty($m['purok']) ? (string) $m['purok'] . ', ' : '') . ($barangayName !== '' ? 'Barangay ' . $barangayName . ', ' : '') . SKED_DEFAULT_MUNICIPALITY . ', ' . SKED_PROVINCE_NAME); ?></div>
                                         </td>
                                         <td><span class="badge <?php echo $statusBadge((string) $m['status']); ?>"><?php echo e($statusLabel((string) $m['status'])); ?></span></td>
                                         <td>
@@ -201,19 +199,13 @@ $sexLabel = static fn (?string $s): string => $s === 'male' ? 'M' : ($s === 'fem
         </main>
     </div>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="../../js/table-tools.js"></script>
     <script>
-        // Client-side name/username filter over the already-rendered rows.
-        (function () {
-            var box = document.getElementById('memberSearch');
-            var table = document.getElementById('membersTable');
-            if (!box || !table) return;
-            box.addEventListener('input', function () {
-                var q = this.value.trim().toLowerCase();
-                table.querySelectorAll('tbody tr').forEach(function (tr) {
-                    tr.style.display = tr.textContent.toLowerCase().indexOf(q) !== -1 ? '' : 'none';
-                });
-            });
-        })();
+        new SkedTableTools('#membersTable', {
+            pageSize: 12,
+            searchPlaceholder: 'Search by name or username…',
+            filters: [{ label: 'Status' }, { label: 'KK Profile' }]
+        });
     </script>
 </body>
 </html>

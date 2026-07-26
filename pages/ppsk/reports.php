@@ -24,6 +24,7 @@ $displayName = !empty($_SESSION['name']) ? (string) $_SESSION['name'] : 'Pederas
 $todayLabel = date('l, F j, Y');
 
 $flash = ['type' => '', 'msg' => ''];
+$formErrors = [];
 
 if (empty($_SESSION['csrf_preports_token'])) {
     $_SESSION['csrf_preports_token'] = bin2hex(random_bytes(32));
@@ -33,7 +34,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $token = (string) ($_POST['csrf_token'] ?? '');
     $formName = (string) ($_POST['form'] ?? '');
     if (!hash_equals((string) $_SESSION['csrf_preports_token'], $token)) {
-        $flash = ['type' => 'danger', 'msg' => 'Security validation failed. Please try again.'];
+        if ($formName === 'review') {
+            $flash = ['type' => 'danger', 'msg' => 'Security validation failed. Please try again.'];
+        } else {
+            $formErrors = ['Security validation failed. Please try again.'];
+        }
     } elseif ($formName === 'review') {
         $ok = sked_mark_report_reviewed((int) ($_POST['report_id'] ?? 0), $ppskUserId);
         $flash = $ok ? ['type' => 'success', 'msg' => 'Report marked reviewed.'] : ['type' => 'danger', 'msg' => 'Could not update that report.'];
@@ -41,11 +46,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $creator = ['id' => $ppskUserId, 'role' => $role, 'name' => $displayName, 'barangay_id' => null];
         $type = (string) ($_POST['type'] ?? 'interbarangay');
         $r = sked_submit_report($creator, $type, (string) ($_POST['title'] ?? ''), (string) ($_POST['content'] ?? ''), null, null, $_FILES['attachment'] ?? null);
-        $flash = $r['ok']
-            ? ['type' => 'success', 'msg' => ucfirst($type) . ' report submitted to DILG.']
-            : ['type' => 'danger', 'msg' => implode(' ', array_map('e', $r['errors']))];
+        if ($r['ok']) {
+            $flash = ['type' => 'success', 'msg' => ucfirst($type) . ' report submitted to DILG.'];
+        } else {
+            $formErrors = $r['errors'];
+        }
     }
 }
+
+sked_form_retain(!empty($formErrors));
 
 $statusFilter = (string) ($_GET['status'] ?? '');
 $monthlyReports = sked_reports_for_role('ppsk', ['type' => 'monthly', 'status' => $statusFilter]);
@@ -143,25 +152,26 @@ $ownSubmissions = array_values(array_filter(
                         <div class="section-heading"><h2>Submit to DILG</h2></div>
                         <form method="post" action="reports.php" enctype="multipart/form-data" novalidate>
                             <input type="hidden" name="csrf_token" value="<?php echo e((string) $_SESSION['csrf_preports_token']); ?>">
+                            <?php sked_render_form_errors($formErrors, 'The report could not be submitted:'); ?>
                             <div class="mb-3">
                                 <label for="type" class="form-label">Report type</label>
                                 <select class="form-select" id="type" name="type">
-                                    <option value="interbarangay">Inter-barangay Event Report</option>
-                                    <option value="minutes">Minutes of Meeting</option>
+                                    <option value="interbarangay" <?php echo sked_old_selected('type', 'interbarangay', true) ? 'selected' : ''; ?>>Inter-barangay Event Report</option>
+                                    <option value="minutes" <?php echo sked_old_selected('type', 'minutes') ? 'selected' : ''; ?>>Minutes of Meeting</option>
                                 </select>
                             </div>
                             <div class="mb-3">
                                 <label for="title" class="form-label">Title</label>
-                                <input type="text" class="form-control" id="title" name="title" maxlength="160" required>
+                                <input type="text" class="form-control" id="title" name="title" maxlength="160" value="<?php echo e(sked_old('title')); ?>" required>
                             </div>
                             <div class="mb-3">
                                 <label for="content" class="form-label">Content</label>
-                                <textarea class="form-control" id="content" name="content" rows="5" maxlength="4000"></textarea>
+                                <textarea class="form-control" id="content" name="content" rows="5" maxlength="4000"><?php echo e(sked_old('content')); ?></textarea>
                             </div>
                             <div class="mb-3">
                                 <label for="attachment" class="form-label">Attachment</label>
                                 <input type="file" class="form-control" id="attachment" name="attachment" accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png">
-                                <div class="form-text">PDF, Word, Excel, JPG, or PNG. Max 10 MB.</div>
+                                <div class="form-text">PDF, Word, Excel, JPG, or PNG. Max 10 MB. <?php if (!empty($formErrors)): ?><span class="text-warning-emphasis">A previously chosen file must be picked again because browsers never resend file inputs.</span><?php endif; ?></div>
                             </div>
                             <button type="submit" class="btn btn-sked w-100"><i class="bi bi-send-check me-1"></i> Submit to DILG</button>
                         </form>

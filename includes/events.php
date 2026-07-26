@@ -27,6 +27,22 @@ require_once __DIR__ . '/barangays.php';
 const SKED_EVENT_IMAGE_MAX_BYTES = 5 * 1024 * 1024; // 5 MB
 const SKED_EVENT_IMAGE_ALLOWED_EXT = ['jpg', 'jpeg', 'png', 'webp'];
 
+/**
+ * Statuses in which a youth who was marked ATTENDED may submit the event
+ * evaluation. Attendance can only be taken from 'confirmed' onwards (see
+ * SKED_ATTENDANCE_OPEN_STATUSES), so gating on "attended" already does the
+ * real work here; this list only excludes draft/cancelled. 'confirmed' is
+ * included on purpose so an event whose official never advanced its status
+ * does not trap its attendees with an un-finalizable attendance.
+ */
+const SKED_EVALUATION_OPEN_STATUSES = ['confirmed', 'ongoing', 'completed', 'evaluation', 'closed'];
+
+/** The same list as a quoted SQL fragment for IN () clauses. Literals only. */
+function sked_evaluation_open_statuses_sql(): string
+{
+    return "'" . implode("','", SKED_EVALUATION_OPEN_STATUSES) . "'";
+}
+
 /** 32-char public share token for a promotable event link. */
 function sked_generate_share_token(): string
 {
@@ -358,21 +374,96 @@ function sked_participant_counts(int $eventId): array
 }
 
 /**
- * Which of the three display buckets an event belongs to, driven by its
- * lifecycle `status` (not a date comparison — the status is the thing SK/
- * PPSK actually maintain, e.g. an event isn't "ongoing" just because its
- * date arrived if nobody advanced its status yet). Used to split event
- * tables into Ongoing / Past / Upcoming across every role's events page.
+ * Which of the three display buckets an event belongs to (Ongoing / Past /
+ * Upcoming), used by every role's events page.
  *
- * @param array{status:string} $event
+ * Status leads, but the CALENDAR is the backstop. Status alone is not
+ * enough in practice: officials routinely publish an event and never
+ * advance it afterwards, and a purely status-driven rule would leave that
+ * finished event sitting under "Upcoming" forever — the past would quietly
+ * under-report. So a non-terminal event whose date has already gone by is
+ * treated as past regardless, and one dated today is treated as ongoing.
+ *
+ * Drafts are never shown as "ongoing": an unpublished draft is not live to
+ * anyone, so it stays upcoming until its date passes (then it is past, and
+ * flagged by sked_event_needs_closeout() as something to tidy up).
+ *
+ * @param array{status:string,event_date?:?string} $event
  */
 function sked_event_time_bucket(array $event): string
 {
-    return match ((string) $event['status']) {
-        'ongoing' => 'ongoing',
-        'completed', 'evaluation', 'closed', 'cancelled' => 'past',
-        default => 'upcoming', // draft, published, confirmed
-    };
+    $status = (string) ($event['status'] ?? '');
+
+    // Terminal statuses are past no matter what the calendar says.
+    if (in_array($status, ['completed', 'evaluation', 'closed', 'cancelled'], true)) {
+        return 'past';
+    }
+    if ($status === 'ongoing') {
+        return 'ongoing';
+    }
+
+    $date = trim((string) ($event['event_date'] ?? ''));
+    if ($date === '') {
+        return 'upcoming'; // date TBA — nothing to compare against
+    }
+    $today = date('Y-m-d');
+
+    if ($status === 'draft') {
+        return $date < $today ? 'past' : 'upcoming';
+    }
+
+    // published / confirmed
+    if ($date < $today) {
+        return 'past';
+    }
+    if ($date === $today) {
+        return 'ongoing';
+    }
+    return 'upcoming';
+}
+
+/** Bootstrap badge color for an event's visible lifecycle label. */
+function sked_event_display_badge_class(array $event): string
+{
+    if (sked_event_time_bucket($event) === 'ongoing'
+        && in_array((string) ($event['status'] ?? ''), ['published', 'confirmed', 'ongoing'], true)) {
+        return 'info';
+    }
+
+    return [
+        'draft' => 'secondary',
+        'published' => 'primary',
+        'confirmed' => 'info',
+        'ongoing' => 'info',
+        'completed' => 'success',
+        'cancelled' => 'danger',
+        'evaluation' => 'warning',
+        'closed' => 'dark',
+    ][(string) ($event['status'] ?? '')] ?? 'secondary';
+}
+
+/** Human label for event listings; today/live events appear as Ongoing. */
+function sked_event_display_status_label(array $event): string
+{
+    if (sked_event_time_bucket($event) === 'ongoing'
+        && in_array((string) ($event['status'] ?? ''), ['published', 'confirmed', 'ongoing'], true)) {
+        return 'Ongoing';
+    }
+
+    return ucfirst(str_replace('_', ' ', (string) ($event['status'] ?? 'draft')));
+}
+
+/**
+ * True when an event has effectively finished (it is in the past bucket)
+ * but its status was never advanced out of draft/published/confirmed —
+ * i.e. the official still needs to close it out. Surfaced as a hint on the
+ * officials' Past Events tables so the backlog is visible instead of
+ * silently rotting.
+ */
+function sked_event_needs_closeout(array $event): bool
+{
+    return sked_event_time_bucket($event) === 'past'
+        && in_array((string) ($event['status'] ?? ''), ['draft', 'published', 'confirmed'], true);
 }
 
 /** Events an official manages, newest first. */
@@ -492,13 +583,14 @@ function sked_youth_evaluable_events(int $youthId): array
     if ($youthId <= 0) {
         return [];
     }
+    $statuses = sked_evaluation_open_statuses_sql();
     $stmt = sked_db()->prepare(
         "SELECT e.id, e.title, e.event_date, ev.rating AS my_rating, ev.comments AS my_comments
            FROM event_participants p
            JOIN events e ON e.id = p.event_id
       LEFT JOIN event_evaluations ev ON ev.event_id = e.id AND ev.user_id = p.user_id
           WHERE p.user_id = :u AND p.status = 'attended'
-            AND e.status IN ('completed','evaluation','closed')
+            AND e.status IN ($statuses)
           ORDER BY e.event_date DESC"
     );
     $stmt->execute(['u' => $youthId]);
@@ -766,14 +858,21 @@ function sked_mark_attendance(int $actorId, int $eventId, int $userId, bool $pre
     return ['ok' => true];
 }
 
-/** Youth submits a post-event evaluation (attended + event completed). Awards points once. */
+/**
+ * Youth submits a post-event evaluation. Awards points once.
+ *
+ * 'ongoing' is accepted alongside the finished statuses because QR
+ * attendance (P19) marks youth present while the event is still running,
+ * and the evaluation is what finalizes that attendance — so it has to be
+ * submittable there and then, not only after the event is closed out.
+ */
 function sked_submit_evaluation(int $youthId, int $eventId, int $rating, string $comments = ''): array
 {
     $event = sked_get_event($eventId);
     if ($event === null) {
         return ['ok' => false, 'error' => 'Event not found.'];
     }
-    if (!in_array($event['status'], ['completed', 'evaluation', 'closed'], true)) {
+    if (!in_array($event['status'], SKED_EVALUATION_OPEN_STATUSES, true)) {
         return ['ok' => false, 'error' => 'Evaluation is not open for this event yet.'];
     }
     $chk = sked_db()->prepare("SELECT 1 FROM event_participants WHERE event_id = :e AND user_id = :u AND status = 'attended' LIMIT 1");

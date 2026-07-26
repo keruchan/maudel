@@ -16,8 +16,11 @@ require_once __DIR__ . '/../../includes/view.php';
 require_once __DIR__ . '/../../includes/barangays.php';
 require_once __DIR__ . '/../../includes/verification.php';
 require_once __DIR__ . '/../../includes/events.php';
-require_once __DIR__ . '/../../includes/charters.php';
 require_once __DIR__ . '/../../includes/analytics.php';
+require_once __DIR__ . '/../../includes/profiling.php';
+require_once __DIR__ . '/../../includes/sk_members.php';
+require_once __DIR__ . '/../../includes/polls.php';
+require_once __DIR__ . '/../../includes/reports.php';
 
 require_role('sk');
 
@@ -33,14 +36,25 @@ $pendingCount = (int) $counts['pending'];
 $memberCount = (int) $counts['active'];
 
 $barangayEvents = $barangayId > 0 ? sked_events_for_manager('sk', $skUserId, $barangayId) : [];
-$upcomingEvents = array_filter($barangayEvents, static fn($e) => in_array($e['status'], ['published', 'confirmed', 'ongoing'], true));
+$ongoingEvents = array_filter($barangayEvents, static fn($e) => sked_event_time_bucket($e) === 'ongoing');
+$upcomingEvents = array_filter($barangayEvents, static fn($e) => sked_event_time_bucket($e) === 'upcoming');
 $totalRegistrations = 0;
 foreach ($barangayEvents as $e) {
     $totalRegistrations += sked_participant_counts((int) $e['id'])['active'];
 }
-$allCharters = $barangayId > 0 ? sked_charters_for_barangay($barangayId) : [];
-$activeProjects = count(array_filter($allCharters, static fn($c) => $c['status'] !== 'completed'));
 $topRecommendations = $barangayId > 0 ? sked_recommend_categories($barangayId, 3) : [];
+
+$totalMembers = $memberCount + $pendingCount + (int) $counts['rejected'];
+$profileSummary = $barangayId > 0 ? sked_youth_profile_summary() : [];
+$myProfileRow = null;
+foreach ($profileSummary as $row) {
+    if ($row['barangay_id'] === $barangayId) { $myProfileRow = $row; break; }
+}
+$profiledCount = $myProfileRow['profiled_count'] ?? 0;
+$activeOfficialsCount = $barangayId > 0 ? count(sked_sk_officials_for_barangay($barangayId)) : 0;
+$openPollsCount = $barangayId > 0 ? count(array_filter(sked_polls_for_barangay($barangayId), static fn ($p) => $p['status'] === 'open')) : 0;
+$topFocusCategory = $topRecommendations[0]['category'] ?? null;
+$monthlyReportSubmitted = $barangayId > 0 ? sked_has_submitted_monthly_report($barangayId, date('Y-m')) : false;
 ?>
 <!doctype html>
 <html lang="en">
@@ -90,86 +104,87 @@ $topRecommendations = $barangayId > 0 ? sked_recommend_categories($barangayId, 3
                 </svg>
             </section>
 
-            <section class="row g-3 mb-5" aria-label="SK Chairman dashboard metrics">
-                <div class="col-sm-6 col-xl-3">
-                    <div class="ledger-card stagger-1">
-                        <div class="d-flex justify-content-between align-items-start">
-                            <span class="ledger-icon"><i class="bi bi-people"></i></span>
-                            <span class="ledger-tag">Members</span>
-                        </div>
-                        <div class="ledger-value tabular"><?php echo $memberCount; ?></div>
-                        <div class="ledger-caption">KK members (barangay)</div>
-                    </div>
-                </div>
-                <div class="col-sm-6 col-xl-3">
-                    <div class="ledger-card accent-amber stagger-2">
-                        <div class="d-flex justify-content-between align-items-start">
-                            <span class="ledger-icon"><i class="bi bi-patch-check"></i></span>
-                            <span class="ledger-tag">Pending</span>
-                        </div>
-                        <div class="ledger-value tabular"><?php echo $pendingCount; ?></div>
-                        <div class="ledger-caption">Profiles to validate</div>
-                    </div>
-                </div>
-                <div class="col-sm-6 col-xl-3">
-                    <div class="ledger-card accent-teal stagger-3">
-                        <div class="d-flex justify-content-between align-items-start">
-                            <span class="ledger-icon"><i class="bi bi-calendar-event"></i></span>
-                            <span class="ledger-tag">Events</span>
-                        </div>
-                        <div class="ledger-value tabular"><?php echo count($upcomingEvents); ?></div>
-                        <div class="ledger-caption">Upcoming events</div>
-                    </div>
-                </div>
-                <div class="col-sm-6 col-xl-3">
-                    <div class="ledger-card accent-rust stagger-4">
-                        <div class="d-flex justify-content-between align-items-start">
-                            <span class="ledger-icon"><i class="bi bi-clipboard-data"></i></span>
-                            <span class="ledger-tag">Projects</span>
-                        </div>
-                        <div class="ledger-value tabular"><?php echo $activeProjects; ?></div>
-                        <div class="ledger-caption">CBYDP projects</div>
-                    </div>
-                </div>
-            </section>
-
-            <section class="mb-5" aria-label="SK Chairman modules">
-                <div class="section-heading">
-                    <h2>Barangay Modules</h2>
-                    <span class="section-note">4 modules available</span>
-                </div>
+            <section class="mb-5" aria-label="SK Chairman dashboard data links">
                 <div class="row g-3">
                     <div class="col-md-6 col-xl-3">
-                        <div class="registry-card">
-                            <span class="registry-icon"><i class="bi bi-people"></i></span>
-                            <h3>KK Members</h3>
-                            <p>Youth profiles registered under your barangay.</p>
-                            <a class="link-open" href="verify.php">Open module <i class="bi bi-arrow-right"></i></a>
-                        </div>
+                        <a class="ledger-card stagger-1 text-reset text-decoration-none d-block" href="kk_members.php">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <span class="ledger-icon"><i class="bi bi-people"></i></span>
+                                <span class="ledger-tag">Registry</span>
+                            </div>
+                            <div class="ledger-value tabular"><?php echo (int) $totalMembers; ?></div>
+                            <div class="ledger-caption">KK Members</div>
+                        </a>
                     </div>
                     <div class="col-md-6 col-xl-3">
-                        <div class="registry-card tone-amber">
-                            <span class="registry-icon"><i class="bi bi-patch-check"></i></span>
-                            <h3>Membership Validation</h3>
-                            <p>Review and validate newly submitted youth profiles.</p>
-                            <a class="link-open" href="verify.php">Open module <i class="bi bi-arrow-right"></i></a>
-                        </div>
+                        <a class="ledger-card accent-amber stagger-2 text-reset text-decoration-none d-block" href="verify.php">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <span class="ledger-icon"><i class="bi bi-patch-check"></i></span>
+                                <span class="ledger-tag">Pending</span>
+                            </div>
+                            <div class="ledger-value tabular"><?php echo (int) $pendingCount; ?></div>
+                            <div class="ledger-caption">Membership Validation</div>
+                        </a>
                     </div>
                     <div class="col-md-6 col-xl-3">
-                        <div class="registry-card tone-teal">
-                            <span class="registry-icon"><i class="bi bi-calendar-plus"></i></span>
-                            <h3>Manage Events</h3>
-                            <p>Create events, take attendance, and track participation.</p>
-                            <a class="link-open" href="events.php">Open module <i class="bi bi-arrow-right"></i></a>
-                        </div>
+                        <a class="ledger-card accent-teal stagger-3 text-reset text-decoration-none d-block" href="profiling.php">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <span class="ledger-icon"><i class="bi bi-clipboard2-data"></i></span>
+                                <span class="ledger-tag">Profiled</span>
+                            </div>
+                            <div class="ledger-value tabular"><?php echo (int) $profiledCount; ?></div>
+                            <div class="ledger-caption">KK Profiling</div>
+                        </a>
                     </div>
                     <div class="col-md-6 col-xl-3">
-                        <div class="registry-card tone-rust">
-                            <span class="registry-icon"><i class="bi bi-megaphone"></i></span>
-                            <h3>Announcements</h3>
-                            <p>Post notices and program announcements to your youth.</p>
-                            <a class="link-open" href="dashboard.php">Open module <i class="bi bi-arrow-right"></i></a>
-                        </div>
+                        <a class="ledger-card accent-rust stagger-4 text-reset text-decoration-none d-block" href="events.php">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <span class="ledger-icon"><i class="bi bi-calendar-plus"></i></span>
+                                <span class="ledger-tag">Ongoing</span>
+                            </div>
+                            <div class="ledger-value tabular"><?php echo count($ongoingEvents); ?></div>
+                            <div class="ledger-caption">Ongoing Events</div>
+                        </a>
+                    </div>
+                    <div class="col-md-6 col-xl-3">
+                        <a class="ledger-card text-reset text-decoration-none d-block" href="members.php">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <span class="ledger-icon"><i class="bi bi-person-badge"></i></span>
+                                <span class="ledger-tag">Officials</span>
+                            </div>
+                            <div class="ledger-value tabular"><?php echo (int) $activeOfficialsCount; ?></div>
+                            <div class="ledger-caption">SK Members</div>
+                        </a>
+                    </div>
+                    <div class="col-md-6 col-xl-3">
+                        <a class="ledger-card accent-teal text-reset text-decoration-none d-block" href="polls.php">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <span class="ledger-icon"><i class="bi bi-bar-chart-steps"></i></span>
+                                <span class="ledger-tag">Polls</span>
+                            </div>
+                            <div class="ledger-value tabular"><?php echo (int) $openPollsCount; ?></div>
+                            <div class="ledger-caption">Community Polls open</div>
+                        </a>
+                    </div>
+                    <div class="col-md-6 col-xl-3">
+                        <a class="ledger-card accent-amber text-reset text-decoration-none d-block" href="analytics.php">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <span class="ledger-icon"><i class="bi bi-bar-chart-line"></i></span>
+                                <span class="ledger-tag">Insight</span>
+                            </div>
+                            <div class="ledger-value" style="font-size:1.1rem;"><?php echo e($topFocusCategory ?? '—'); ?></div>
+                            <div class="ledger-caption">Analytics — top focus</div>
+                        </a>
+                    </div>
+                    <div class="col-md-6 col-xl-3">
+                        <a class="ledger-card accent-rust text-reset text-decoration-none d-block" href="reports.php">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <span class="ledger-icon"><i class="bi bi-file-earmark-text"></i></span>
+                                <span class="ledger-tag">This month</span>
+                            </div>
+                            <div class="ledger-value" style="font-size:1.1rem;"><?php echo $monthlyReportSubmitted ? 'Submitted' : 'Not yet'; ?></div>
+                            <div class="ledger-caption">Monthly Reports</div>
+                        </a>
                     </div>
                 </div>
             </section>
@@ -240,14 +255,14 @@ $topRecommendations = $barangayId > 0 ? sked_recommend_categories($barangayId, 3
                     <div class="row g-3">
                         <?php foreach ($topRecommendations as $r): ?>
                         <div class="col-md-4">
-                            <div class="ledger-card">
+                            <a class="ledger-card text-reset text-decoration-none d-block" href="analytics.php">
                                 <div class="d-flex justify-content-between align-items-start">
                                     <span class="ledger-icon"><i class="bi bi-graph-up-arrow"></i></span>
                                     <span class="ledger-tag tabular"><?php echo $r['score']; ?>/100</span>
                                 </div>
                                 <div class="ledger-value" style="font-size:1.1rem;"><?php echo e($r['category']); ?></div>
                                 <div class="ledger-caption"><?php echo e(sked_explain_recommendation($r)); ?></div>
-                            </div>
+                            </a>
                         </div>
                         <?php endforeach; ?>
                     </div>

@@ -40,13 +40,13 @@ CREATE TABLE IF NOT EXISTS barangays (
 -- Seed the 20 official barangays of Siniloan, Laguna (idempotent).
 INSERT IGNORE INTO barangays (name, municipality, province) VALUES
     ('Acevida',                    'Siniloan', 'Laguna'),
-    ('Bagong Pag-asa (Poblacion)', 'Siniloan', 'Laguna'),
-    ('Bagumbarangay (Poblacion)',  'Siniloan', 'Laguna'),
+    ('Bagong Pag-Asa',             'Siniloan', 'Laguna'),
+    ('Bagumbarangay',              'Siniloan', 'Laguna'),
     ('Buhay',                      'Siniloan', 'Laguna'),
-    ('G. Redor (Poblacion)',       'Siniloan', 'Laguna'),
+    ('G. Redor',                   'Siniloan', 'Laguna'),
     ('Gen. Luna',                  'Siniloan', 'Laguna'),
     ('Halayhayin',                 'Siniloan', 'Laguna'),
-    ('J. Rizal (Poblacion)',       'Siniloan', 'Laguna'),
+    ('J. Rizal',                   'Siniloan', 'Laguna'),
     ('Kapatalan',                  'Siniloan', 'Laguna'),
     ('Laguio',                     'Siniloan', 'Laguna'),
     ('Liyang',                     'Siniloan', 'Laguna'),
@@ -67,6 +67,7 @@ ALTER TABLE users
     ADD COLUMN IF NOT EXISTS status ENUM('pending','active','rejected','retired')
         NOT NULL DEFAULT 'pending' AFTER role,
     ADD COLUMN IF NOT EXISTS barangay_id INT UNSIGNED NULL AFTER status,
+    ADD COLUMN IF NOT EXISTS purok VARCHAR(30) NULL AFTER barangay_id,
     ADD COLUMN IF NOT EXISTS former_role_badge VARCHAR(255) NULL AFTER verified,
     ADD COLUMN IF NOT EXISTS term_start DATE NULL AFTER former_role_badge,
     ADD COLUMN IF NOT EXISTS term_end DATE NULL AFTER term_start;

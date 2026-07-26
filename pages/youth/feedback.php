@@ -26,6 +26,7 @@ $todayLabel = date('l, F j, Y');
 $isDemo = $userId < 1000;
 
 $flash = ['type' => '', 'msg' => ''];
+$formErrors = [];
 if (empty($_SESSION['csrf_feedback_token'])) {
     $_SESSION['csrf_feedback_token'] = bin2hex(random_bytes(32));
 }
@@ -33,17 +34,22 @@ if (empty($_SESSION['csrf_feedback_token'])) {
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $token = (string) ($_POST['csrf_token'] ?? '');
     if (!hash_equals((string) $_SESSION['csrf_feedback_token'], $token)) {
-        $flash = ['type' => 'danger', 'msg' => 'Security validation failed. Please try again.'];
+        $formErrors = ['Security validation failed. Please try again.'];
     } elseif ($isDemo) {
         $flash = ['type' => 'warning', 'msg' => 'Demo account: sending is preview-only and was not saved.'];
     } else {
         $submitter = ['id' => $userId, 'barangay_id' => $barangayId];
         $r = sked_submit_feedback($submitter, (string) ($_POST['message'] ?? ''));
-        $flash = $r['ok']
-            ? ['type' => 'success', 'msg' => 'Sent to your Barangay SK.']
-            : ['type' => 'danger', 'msg' => implode(' ', array_map('e', $r['errors']))];
+        if ($r['ok']) {
+            $flash = ['type' => 'success', 'msg' => 'Sent to your Barangay SK.'];
+        } else {
+            $formErrors = $r['errors'];
+        }
     }
 }
+
+// Keep the message typed when sending failed, so it isn't lost.
+sked_form_retain(!empty($formErrors));
 
 $history = (!$isDemo) ? sked_feedback_for_youth($userId) : [];
 ?>
@@ -92,9 +98,10 @@ $history = (!$isDemo) ? sked_feedback_for_youth($userId) : [];
                         <div class="section-heading"><h2>Send a Message</h2></div>
                         <form method="post" action="feedback.php" novalidate>
                             <input type="hidden" name="csrf_token" value="<?php echo e((string) $_SESSION['csrf_feedback_token']); ?>">
+                            <?php sked_render_form_errors($formErrors, 'The message could not be sent:'); ?>
                             <div class="mb-3">
                                 <label for="message" class="form-label">Your message</label>
-                                <textarea class="form-control" id="message" name="message" rows="6" maxlength="2000" placeholder="Share a suggestion or concern with your Barangay SK…" required></textarea>
+                                <textarea class="form-control" id="message" name="message" rows="6" maxlength="2000" placeholder="Share a suggestion or concern with your Barangay SK…" required><?php echo e(sked_old('message')); ?></textarea>
                             </div>
                             <button type="submit" class="btn btn-sked w-100"><i class="bi bi-send me-1"></i> Send to my SK</button>
                         </form>

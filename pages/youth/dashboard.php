@@ -17,23 +17,30 @@ require_once __DIR__ . '/../../includes/profiling.php';
 require_once __DIR__ . '/../../includes/sk_members.php';
 require_once __DIR__ . '/../../includes/events.php';
 require_once __DIR__ . '/../../includes/feedback.php';
+require_once __DIR__ . '/../../includes/polls.php';
 
 require_role('youth');
 
 $currentRole = (string) $_SESSION['role'];
 $userId = (int) $_SESSION['id'];
+$barangayId = isset($_SESSION['barangay_id']) ? (int) $_SESSION['barangay_id'] : 0;
 $displayName = !empty($_SESSION['name']) ? (string) $_SESSION['name'] : 'Youth Member';
 $todayLabel = date('l, F j, Y');
 $isVerified = sked_is_verified();
 $isDemo = $userId < 1000;
 $totalPoints = $isDemo ? 0 : sked_total_points($userId);
 $hasProfile = !$isDemo && sked_has_youth_profile($userId);
-$activity = sked_activity_level($totalPoints);
+$engagement = sked_engagement_level($totalPoints);
 $officialBadge = !$isDemo ? sked_sk_official_badge_for_user($userId) : null;
 $myParticipations = $isDemo ? [] : sked_youth_participations($userId);
 $registeredEventCount = count($myParticipations);
 $activeRegistrationCount = count(array_filter($myParticipations, static fn ($e) => in_array($e['status'], ['published', 'confirmed', 'ongoing'], true)));
 $myOpenFeedbackCount = $isDemo ? 0 : count(array_filter(sked_feedback_for_youth($userId), static fn ($f) => $f['status'] === 'open'));
+
+$eligibleEvents = ($isVerified && $barangayId > 0) ? sked_events_for_youth($userId, $barangayId) : [];
+$ongoingCount = count(array_filter($eligibleEvents, static fn ($e) => sked_event_time_bucket($e) === 'ongoing'));
+$upcomingOpenCount = count(array_filter($eligibleEvents, static fn ($e) => sked_event_time_bucket($e) === 'upcoming'));
+$openPollsCount = ($isVerified && $barangayId > 0) ? count(sked_open_polls_for_youth($barangayId)) : 0;
 ?>
 <!doctype html>
 <html lang="en">
@@ -99,104 +106,87 @@ $myOpenFeedbackCount = $isDemo ? 0 : count(array_filter(sked_feedback_for_youth(
             </div>
             <?php endif; ?>
 
-            <section class="row g-3 mb-5" aria-label="Youth dashboard metrics">
-                <div class="col-sm-6 col-xl-3">
-                    <div class="ledger-card <?php echo $isVerified ? '' : 'accent-amber'; ?> stagger-1">
-                        <div class="d-flex justify-content-between align-items-start">
-                            <span class="ledger-icon"><i class="bi bi-person-vcard"></i></span>
-                            <span class="ledger-tag">Profile</span>
-                        </div>
-                        <div class="ledger-value" style="font-size:1.35rem;"><?php echo $isVerified ? 'Verified' : 'Pending'; ?></div>
-                        <div class="ledger-caption">KK membership status</div>
-                    </div>
-                </div>
-                <div class="col-sm-6 col-xl-3">
-                    <div class="ledger-card <?php echo $isVerified ? 'accent-teal' : 'accent-amber'; ?> stagger-2">
-                        <div class="d-flex justify-content-between align-items-start">
-                            <span class="ledger-icon"><i class="bi <?php echo $isVerified ? 'bi-calendar-check' : 'bi-lock'; ?>"></i></span>
-                            <span class="ledger-tag">Active</span>
-                        </div>
-                        <div class="ledger-value <?php echo $isVerified ? 'tabular' : ''; ?>" style="<?php echo $isVerified ? '' : 'font-size:1.35rem;'; ?>"><?php echo $isVerified ? (int) $registeredEventCount : 'Locked'; ?></div>
-                        <div class="ledger-caption"><?php echo $isVerified ? 'Registered events' : 'Unlocks after verification'; ?></div>
-                    </div>
-                </div>
-                <div class="col-sm-6 col-xl-3">
-                    <a class="ledger-card accent-amber stagger-3 text-reset text-decoration-none d-block" href="<?php echo $isVerified ? 'activity.php' : 'dashboard.php'; ?>">
-                        <div class="d-flex justify-content-between align-items-start">
-                            <span class="ledger-icon"><i class="bi <?php echo $isVerified ? e($activity['level']['icon']) : 'bi-lock'; ?>"></i></span>
-                            <span class="ledger-tag">Points</span>
-                        </div>
-                        <div class="ledger-value <?php echo $isVerified ? 'tabular' : ''; ?>" style="<?php echo $isVerified ? '' : 'font-size:1.35rem;'; ?>"><?php echo $isVerified ? (int) $totalPoints : 'Locked'; ?></div>
-                        <div class="ledger-caption"><?php echo $isVerified ? e($activity['level']['label']) : 'Unlocks after verification'; ?></div>
-                    </a>
-                </div>
-                <div class="col-sm-6 col-xl-3">
-                    <div class="ledger-card accent-rust stagger-4">
-                        <div class="d-flex justify-content-between align-items-start">
-                            <span class="ledger-icon"><i class="bi bi-chat-left-text"></i></span>
-                            <span class="ledger-tag">Feedback</span>
-                        </div>
-                        <div class="ledger-value tabular"><?php echo (int) $myOpenFeedbackCount; ?></div>
-                        <div class="ledger-caption">Open concerns</div>
-                    </div>
-                </div>
-            </section>
-
-            <section class="mb-5" aria-label="Youth service modules">
-                <div class="section-heading">
-                    <h2>Youth Services</h2>
-                    <span class="section-note">4 service areas</span>
-                </div>
+            <section class="mb-5" aria-label="Youth dashboard data links">
                 <div class="row g-3">
                     <div class="col-md-6 col-xl-3">
-                        <?php if ($isVerified): ?>
-                        <div class="registry-card">
-                            <span class="registry-icon"><i class="bi bi-person-vcard"></i></span>
-                            <h3>Youth Profile (KK)</h3>
-                            <p><?php echo $hasProfile ? 'Your KK profile is complete. Review or update it anytime.' : 'Complete your KK profile to earn points and shape SK programs.'; ?></p>
-                            <a class="link-open" href="profile.php"><?php echo $hasProfile ? 'Update profile' : 'Complete profile'; ?> <i class="bi bi-arrow-right"></i></a>
-                        </div>
-                        <?php else: ?>
-                        <div class="registry-card" style="opacity:.62;" aria-disabled="true">
-                            <span class="registry-icon"><i class="bi bi-lock-fill"></i></span>
-                            <h3>Youth Profile (KK)</h3>
-                            <p>Profiling unlocks once your Barangay SK verifies your account.</p>
-                            <span class="link-open is-locked" aria-hidden="true"><i class="bi bi-lock-fill"></i></span>
-                        </div>
-                        <?php endif; ?>
+                        <a class="ledger-card <?php echo $isVerified ? '' : 'accent-amber'; ?> stagger-1 text-reset text-decoration-none d-block" href="profile.php">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <span class="ledger-icon"><i class="bi bi-person-vcard"></i></span>
+                                <span class="ledger-tag">Profile</span>
+                            </div>
+                            <div class="ledger-value" style="font-size:1.35rem;"><?php echo $isVerified ? 'Verified' : 'Pending'; ?></div>
+                            <div class="ledger-caption">KK membership status</div>
+                        </a>
                     </div>
                     <div class="col-md-6 col-xl-3">
-                        <?php if ($isVerified): ?>
-                        <div class="registry-card tone-teal">
-                            <span class="registry-icon"><i class="bi bi-calendar-event"></i></span>
-                            <h3>Browse Events</h3>
-                            <p>Discover and register for upcoming SK events and programs.</p>
-                            <a class="link-open" href="events.php">Open module <i class="bi bi-arrow-right"></i></a>
-                        </div>
-                        <?php else: ?>
-                        <div class="registry-card tone-teal" style="opacity:.62;" aria-disabled="true">
-                            <span class="registry-icon"><i class="bi bi-lock-fill"></i></span>
-                            <h3>Browse Events</h3>
-                            <p>Locked until your Barangay SK verifies your KK profile.</p>
-                            <span class="link-open is-locked" aria-hidden="true"><i class="bi bi-lock-fill"></i></span>
-                        </div>
-                        <?php endif; ?>
+                        <a class="ledger-card <?php echo $hasProfile ? 'accent-teal' : 'accent-amber'; ?> stagger-2 text-reset text-decoration-none d-block" href="profile.php">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <span class="ledger-icon"><i class="bi bi-clipboard2-data"></i></span>
+                                <span class="ledger-tag">KK Form</span>
+                            </div>
+                            <div class="ledger-value" style="font-size:1.35rem;"><?php echo $hasProfile ? 'Complete' : 'Incomplete'; ?></div>
+                            <div class="ledger-caption">KK profiling record</div>
+                        </a>
                     </div>
                     <div class="col-md-6 col-xl-3">
-                        <div class="registry-card tone-amber">
-                            <span class="registry-icon"><i class="bi bi-megaphone"></i></span>
-                            <h3>Announcements</h3>
-                            <p>Official SK notices, schedules, and program updates.</p>
-                            <a class="link-open" href="dashboard.php">Open module <i class="bi bi-arrow-right"></i></a>
-                        </div>
+                        <a class="ledger-card <?php echo $isVerified ? 'accent-teal' : 'accent-amber'; ?> stagger-3 text-reset text-decoration-none d-block" href="events.php">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <span class="ledger-icon"><i class="bi <?php echo $isVerified ? 'bi-calendar-check' : 'bi-lock'; ?>"></i></span>
+                                <span class="ledger-tag">Registered</span>
+                            </div>
+                            <div class="ledger-value <?php echo $isVerified ? 'tabular' : ''; ?>" style="<?php echo $isVerified ? '' : 'font-size:1.35rem;'; ?>"><?php echo $isVerified ? (int) $registeredEventCount : 'Locked'; ?></div>
+                            <div class="ledger-caption"><?php echo $isVerified ? 'Events joined' : 'Unlocks after verification'; ?></div>
+                        </a>
                     </div>
                     <div class="col-md-6 col-xl-3">
-                        <div class="registry-card tone-rust">
-                            <span class="registry-icon"><i class="bi bi-chat-left-text"></i></span>
-                            <h3>Feedback / Concerns</h3>
-                            <p>Send suggestions and concerns to your SK Council.</p>
-                            <a class="link-open" href="dashboard.php">Open module <i class="bi bi-arrow-right"></i></a>
-                        </div>
+                        <a class="ledger-card accent-teal stagger-4 text-reset text-decoration-none d-block" href="events.php">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <span class="ledger-icon"><i class="bi bi-play-circle"></i></span>
+                                <span class="ledger-tag">Ongoing</span>
+                            </div>
+                            <div class="ledger-value tabular"><?php echo (int) $ongoingCount; ?></div>
+                            <div class="ledger-caption">Ongoing events</div>
+                        </a>
+                    </div>
+                    <div class="col-md-6 col-xl-3">
+                        <a class="ledger-card accent-amber text-reset text-decoration-none d-block" href="events.php">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <span class="ledger-icon"><i class="bi bi-calendar-event"></i></span>
+                                <span class="ledger-tag">Upcoming</span>
+                            </div>
+                            <div class="ledger-value tabular"><?php echo (int) $upcomingOpenCount; ?></div>
+                            <div class="ledger-caption">Upcoming events</div>
+                        </a>
+                    </div>
+                    <div class="col-md-6 col-xl-3">
+                        <a class="ledger-card accent-rust text-reset text-decoration-none d-block" href="feedback.php">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <span class="ledger-icon"><i class="bi bi-chat-left-text"></i></span>
+                                <span class="ledger-tag">Feedback</span>
+                            </div>
+                            <div class="ledger-value tabular"><?php echo (int) $myOpenFeedbackCount; ?></div>
+                            <div class="ledger-caption">Open concerns</div>
+                        </a>
+                    </div>
+                    <div class="col-md-6 col-xl-3">
+                        <a class="ledger-card accent-amber text-reset text-decoration-none d-block" href="activity.php">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <span class="ledger-icon"><i class="bi <?php echo $isVerified ? e($engagement['level']['icon']) : 'bi-lock'; ?>"></i></span>
+                                <span class="ledger-tag">Points</span>
+                            </div>
+                            <div class="ledger-value <?php echo $isVerified ? 'tabular' : ''; ?>" style="<?php echo $isVerified ? '' : 'font-size:1.35rem;'; ?>"><?php echo $isVerified ? (int) $totalPoints : 'Locked'; ?></div>
+                            <div class="ledger-caption"><?php echo $isVerified ? e($engagement['level']['label']) : 'Unlocks after verification'; ?></div>
+                        </a>
+                    </div>
+                    <div class="col-md-6 col-xl-3">
+                        <a class="ledger-card accent-teal text-reset text-decoration-none d-block" href="polls.php">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <span class="ledger-icon"><i class="bi bi-bar-chart-steps"></i></span>
+                                <span class="ledger-tag">Polls</span>
+                            </div>
+                            <div class="ledger-value tabular"><?php echo (int) $openPollsCount; ?></div>
+                            <div class="ledger-caption">Community polls open</div>
+                        </a>
                     </div>
                 </div>
             </section>
@@ -225,8 +215,8 @@ $myOpenFeedbackCount = $isDemo ? 0 : count(array_filter(sked_feedback_for_youth(
                         </a>
                         <a class="docket-row text-reset text-decoration-none" href="activity.php">
                             <div>
-                                <div class="docket-title">Activity level &amp; points <i class="bi bi-arrow-right small text-secondary"></i></div>
-                                <div class="docket-sub"><?php echo e($activity['level']['label']); ?><?php echo $activity['next'] !== null ? ' &middot; ' . (int) $activity['points_to_next'] . ' pts to ' . e($activity['next']['label']) : ' &middot; Highest tier reached'; ?></div>
+                                <div class="docket-title">Engagement level &amp; points <i class="bi bi-arrow-right small text-secondary"></i></div>
+                                <div class="docket-sub"><?php echo e($engagement['level']['label']); ?><?php echo $engagement['next'] !== null ? ' &middot; ' . (int) $engagement['points_to_next'] . ' pts to ' . e($engagement['next']['label']) : ' &middot; Highest tier reached'; ?></div>
                             </div>
                             <span class="count-badge tabular"><?php echo (int) $totalPoints; ?> pts</span>
                         </a>
@@ -239,7 +229,7 @@ $myOpenFeedbackCount = $isDemo ? 0 : count(array_filter(sked_feedback_for_youth(
                             <span class="count-badge tabular">Locked</span>
                         </div>
                         <?php endif; ?>
-                        <a class="docket-row text-reset text-decoration-none" href="dashboard.php">
+                        <a class="docket-row text-reset text-decoration-none" href="feedback.php">
                             <div>
                                 <div class="docket-title">Feedback / concerns <i class="bi bi-arrow-right small text-secondary"></i></div>
                                 <div class="docket-sub">Submitted concerns awaiting a reply</div>

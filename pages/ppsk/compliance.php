@@ -95,7 +95,7 @@ $pendingSkIds = array_column(
                 <?php if (empty($overview)): ?>
                     <div class="text-center text-secondary py-4"><i class="bi bi-shield-check fs-1 d-block mb-2"></i>No active SK accounts yet.</div>
                 <?php else: ?>
-                    <div class="table-responsive"><table class="table align-middle">
+                    <div class="table-responsive"><table class="table align-middle" id="complianceTable">
                         <thead><tr><th>Barangay</th><th>SK Chairman</th><th>Strikes</th><th class="text-end">Action</th></tr></thead>
                         <tbody>
                         <?php foreach ($overview as $row): $strikes = (int) $row['strikes']; $pending = in_array((int) $row['sk_user_id'], $pendingSkIds, true); ?>
@@ -125,5 +125,9 @@ $pendingSkIds = array_column(
         </main>
     </div>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="../../js/table-tools.js"></script>
+    <script>
+        new SkedTableTools('#complianceTable', { pageSize: 10 });
+    </script>
 </body>
 </html>

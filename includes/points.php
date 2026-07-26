@@ -5,8 +5,8 @@
  * Project  : SKed - Youth Profiling System for Event Management
  * Purpose  : Participation-points ledger helpers (P5 infra, first used by
  *            P3 profiling). Every point-earning action writes an auditable
- *            row to `points_ledger`; a youth's activity level is derived
- *            from the sum at any time (activity-level UI lands in P5).
+ *            row to `points_ledger`; a youth's engagement level is derived
+ *            from the sum at any time (engagement-level UI lands in P5).
  * ============================================================
  */
 
@@ -83,29 +83,77 @@ function sked_total_points(int $userId): int
 }
 
 /**
- * Activity-level tiers, ascending by point threshold. Tune here as the
+ * Engagement-level tiers, ascending by point threshold. Tune here as the
  * scheme evolves — nothing else needs to change.
+ *
+ * 'unlocks' lists what becomes available AT that tier (not cumulative in
+ * the data — the UI renders each tier as "everything below, plus these").
+ * These are informational/recognition perks, not access gates: nothing in
+ * the app currently checks tier to allow/deny a real feature, so display
+ * this as "what being active earns you," not as a paywall.
  */
-function sked_activity_levels(): array
+function sked_engagement_levels(): array
 {
     return [
-        ['key' => 'newcomer', 'label' => 'Newcomer',       'icon' => 'bi-seedling',     'min' => 0],
-        ['key' => 'bronze',   'label' => 'Bronze Member',  'icon' => 'bi-award',        'min' => 10],
-        ['key' => 'silver',   'label' => 'Silver Member',  'icon' => 'bi-award-fill',   'min' => 30],
-        ['key' => 'gold',     'label' => 'Gold Member',    'icon' => 'bi-trophy',       'min' => 60],
-        ['key' => 'platinum', 'label' => 'Platinum Member','icon' => 'bi-trophy-fill',  'min' => 100],
+        [
+            'key' => 'newcomer', 'label' => 'Newcomer', 'icon' => 'bi-seedling', 'min' => 0,
+            'tagline' => 'Just verified and getting started.',
+            'unlocks' => [
+                'Browse and join open barangay events',
+                'Digital KK ID with QR for event attendance',
+                'Vote in community polls',
+            ],
+        ],
+        [
+            'key' => 'bronze', 'label' => 'Bronze Member', 'icon' => 'bi-award', 'min' => 10,
+            'tagline' => 'Profile complete, first steps taken.',
+            'unlocks' => [
+                'Bronze badge shown on your KK ID card',
+                'Early view of new announcements',
+            ],
+        ],
+        [
+            'key' => 'silver', 'label' => 'Silver Member', 'icon' => 'bi-award-fill', 'min' => 30,
+            'tagline' => 'A regular face at barangay activities.',
+            'unlocks' => [
+                'Priority slot in limited-capacity events',
+                'Can suggest event ideas directly to your SK',
+            ],
+        ],
+        [
+            'key' => 'gold', 'label' => 'Gold Member', 'icon' => 'bi-trophy', 'min' => 60,
+            'tagline' => 'Consistently active across programs.',
+            'unlocks' => [
+                'Guaranteed slot in limited-capacity events',
+                'Invited to KK Assembly planning discussions',
+                "Listed on your barangay's youth honor roll",
+            ],
+        ],
+        [
+            'key' => 'platinum', 'label' => 'Platinum Member', 'icon' => 'bi-trophy-fill', 'min' => 100,
+            'tagline' => 'A core youth volunteer.',
+            'unlocks' => [
+                'Printable Certificate of Active Participation',
+                'First considered for scholarship/training endorsements',
+                'Eligible as a youth volunteer marshal at events',
+            ],
+        ],
     ];
 }
 
 /**
- * Derive a youth's activity level from their total points: current tier,
+ * Derive a youth's engagement level from their total points: current tier,
  * next tier (null if maxed), points still needed, and progress toward it.
+ *
+ * Derived on the fly rather than stored, so changing a threshold above
+ * re-tiers everyone instantly with no migration (same rule as P6 charter
+ * success rates and P19 attendance finalization).
  *
  * @return array{points:int,level:array,next:?array,points_to_next:int,progress_pct:int}
  */
-function sked_activity_level(int $totalPoints): array
+function sked_engagement_level(int $totalPoints): array
 {
-    $levels = sked_activity_levels();
+    $levels = sked_engagement_levels();
     $current = $levels[0];
     $next = null;
 

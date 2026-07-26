@@ -88,7 +88,7 @@ $totals = [
                 <?php if (empty($summary)): ?>
                     <div class="text-center text-secondary py-5"><i class="bi bi-people fs-1 d-block mb-2"></i>No barangay data yet.</div>
                 <?php else: ?>
-                    <div class="table-responsive"><table class="table align-middle">
+                    <div class="table-responsive"><table class="table align-middle" id="youthProfilesTable">
                         <thead><tr><th>Barangay</th><th>KK Members</th><th>Verified</th><th>Profiled</th></tr></thead>
                         <tbody>
                         <?php foreach ($summary as $row): $pct = $row['total_youth'] > 0 ? round($row['profiled_count'] / $row['total_youth'] * 100) : 0; ?>
@@ -106,5 +106,9 @@ $totals = [
         </main>
     </div>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="../../js/table-tools.js"></script>
+    <script>
+        new SkedTableTools('#youthProfilesTable', { pageSize: 15 });
+    </script>
 </body>
 </html>

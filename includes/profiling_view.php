@@ -32,6 +32,41 @@ function sked_render_kk_profile_form(array $v, array $identity, bool $disabled, 
     $age = !empty($identity['birthdate']) ? sked_age_from_birthdate((string) $identity['birthdate']) : null;
     $ageGroup = sked_youth_age_group($age);
     $sexLabels = ['male' => 'Male (Lalaki)', 'female' => 'Female (Babae)'];
+    $barangayName = !empty($identity['barangay_id']) ? sked_barangay_name((int) $identity['barangay_id']) : '';
+    $consentBarangay = $barangayName !== '' ? 'Barangay ' . $barangayName : 'Barangay';
+    $alignConsentLocation = static function (string $text) use ($consentBarangay): string {
+        return str_replace(
+            [
+                'Barangay J. P Rizal Siniloan, Laguna',
+                'Barangay J. P. Rizal Siniloan, Laguna',
+                'Barangay J.P. Rizal Siniloan, Laguna',
+                'Barangay J. P Rizal',
+                'Barangay J. P. Rizal',
+                'Barangay J.P. Rizal',
+                'Brgy. J. P Rizal Siniloan, Laguna',
+                'Brgy. J. P. Rizal Siniloan, Laguna',
+                'Brgy. J.P. Rizal Siniloan, Laguna',
+                'Brgy. J. P Rizal',
+                'Brgy. J. P. Rizal',
+                'Brgy. J.P. Rizal',
+            ],
+            [
+                $consentBarangay . ' Siniloan, Laguna',
+                $consentBarangay . ' Siniloan, Laguna',
+                $consentBarangay . ' Siniloan, Laguna',
+                $consentBarangay,
+                $consentBarangay,
+                $consentBarangay,
+                $consentBarangay . ' Siniloan, Laguna',
+                $consentBarangay . ' Siniloan, Laguna',
+                $consentBarangay . ' Siniloan, Laguna',
+                $consentBarangay,
+                $consentBarangay,
+                $consentBarangay,
+            ],
+            $text
+        );
+    };
 
     $classifications = (array) ($v['classifications'] ?? []);
     $specificNeeds = (array) ($v['specific_needs'] ?? []);
@@ -84,14 +119,14 @@ function sked_render_kk_profile_form(array $v, array $identity, bool $disabled, 
         <!-- Consent / research information -->
         <div class="docket-panel mb-4">
             <div class="section-heading"><h2>Kabatiran sa Pagpapahintulot</h2><span class="section-note">Informed Consent</span></div>
-            <p class="text-secondary" style="white-space:pre-line;"><?php echo e($consent['intro']); ?></p>
+            <p class="text-secondary" style="white-space:pre-line;"><?php echo e($alignConsentLocation($consent['intro'])); ?></p>
             <details class="mb-3">
                 <summary class="fw-semibold" style="cursor:pointer;">Basahin ang buong impormasyon ng pag-aaral (Layunin, Panganib/Kumpidensyalidad, atbp.)</summary>
                 <div class="mt-3">
                     <?php foreach ($consent['sections'] as $sec): ?>
                         <div class="mb-3">
                             <div class="fw-semibold"><?php echo e($sec['title']); ?></div>
-                            <p class="text-secondary mb-0" style="white-space:pre-line;"><?php echo e($sec['body']); ?></p>
+                            <p class="text-secondary mb-0" style="white-space:pre-line;"><?php echo e($alignConsentLocation($sec['body'])); ?></p>
                         </div>
                     <?php endforeach; ?>
                 </div>
@@ -144,12 +179,32 @@ function sked_render_kk_profile_form(array $v, array $identity, bool $disabled, 
                     <label class="form-label">Contact Number</label>
                     <input type="text" class="form-control" value="<?php echo e((string) ($identity['mobile'] ?? '') ?: '—'); ?>" disabled>
                 </div>
-                <div class="col-md-4">
+                <div class="col-md-3">
+                    <label class="form-label">Region</label>
+                    <input type="text" class="form-control" value="<?php echo e(SKED_REGION_NAME); ?>" disabled>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Province</label>
+                    <input type="text" class="form-control" value="<?php echo e(SKED_PROVINCE_NAME); ?>" disabled>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Municipality</label>
+                    <input type="text" class="form-control" value="<?php echo e(SKED_DEFAULT_MUNICIPALITY); ?>" disabled>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Barangay</label>
+                    <input type="text" class="form-control" value="<?php echo e($barangayName !== '' ? 'Barangay ' . $barangayName : '—'); ?>" disabled>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Purok</label>
+                    <input type="text" class="form-control" value="<?php echo e((string) ($identity['purok'] ?? '') ?: '—'); ?>" disabled>
+                </div>
+                <div class="col-md-12">
                     <label for="facebook_name" class="form-label">Facebook Account Name <span class="text-danger">*</span></label>
                     <input type="text" class="form-control" id="facebook_name" name="facebook_name" maxlength="100" placeholder="Halimbawa: Juan Dela Cruz" value="<?php echo e((string) ($v['facebook_name'] ?? '')); ?>"<?php echo $dis; ?> required>
                 </div>
             </div>
-            <p class="text-secondary small mt-2 mb-0"><i class="bi bi-lock-fill me-1"></i>Name, birthday, sex, email, and contact number come from your registered account. To correct them, contact your Barangay SK.</p>
+            <p class="text-secondary small mt-2 mb-0"><i class="bi bi-lock-fill me-1"></i>Name, birthday, sex, email, contact number, and address come from the registered account. To correct them, contact the Barangay SK.</p>
         </div>
 
         <!-- II. Demographic Characteristics -->

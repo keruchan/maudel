@@ -16,6 +16,7 @@ require_once __DIR__ . '/../../includes/navigation.php';
 require_once __DIR__ . '/../../includes/view.php';
 require_once __DIR__ . '/../../includes/barangays.php';
 require_once __DIR__ . '/../../includes/events.php';
+require_once __DIR__ . '/../../includes/attendance.php';
 
 require_role('youth');
 
@@ -62,6 +63,7 @@ $upcomingEvents = array_values(array_filter($events, static fn ($e) => sked_even
 $myParticipations = (!$isDemo && $isVerified) ? sked_youth_participations($userId) : [];
 $pastParticipations = array_values(array_filter($myParticipations, static fn ($p) => sked_event_time_bucket($p) === 'past'));
 
+$pendingEvaluations = (!$isDemo && $isVerified) ? sked_pending_evaluations_for_youth($userId) : [];
 $evaluable = (!$isDemo && $isVerified) ? sked_youth_evaluable_events($userId) : [];
 $evaluableById = [];
 foreach ($evaluable as $ev) { $evaluableById[(int) $ev['id']] = $ev; }
@@ -71,7 +73,7 @@ $participantStatusBadge = static function (string $s): string {
     return $map[$s] ?? 'secondary';
 };
 
-$renderBrowseTable = function (string $title, array $list, string $icon, string $emptyMsg) use ($isDemo) {
+$renderBrowseTable = function (string $title, array $list, string $icon, string $emptyMsg, string $tableId) use ($isDemo) {
     ?>
     <div class="docket-panel mb-4">
         <div class="section-heading"><h2><?php echo e($title); ?></h2><span class="section-note"><?php echo count($list); ?> available</span></div>
@@ -79,7 +81,7 @@ $renderBrowseTable = function (string $title, array $list, string $icon, string 
             <div class="text-center text-secondary py-5"><i class="bi <?php echo e($icon); ?> fs-1 d-block mb-2"></i><?php echo e($emptyMsg); ?></div>
         <?php else: ?>
             <div class="table-responsive">
-                <table class="table align-middle">
+                <table class="table align-middle" id="<?php echo e($tableId); ?>">
                     <thead><tr><th>Event</th><th>Date</th><th>Scope</th><th>Slots</th><th class="text-end">Action</th></tr></thead>
                     <tbody>
                     <?php foreach ($list as $ev): ?>
@@ -203,8 +205,50 @@ $renderBrowseTable = function (string $title, array $list, string $icon, string 
 
             <?php if ($isVerified): ?>
 
+            <?php if (!empty($pendingEvaluations)): ?>
+                <div class="docket-panel mb-4" style="border-color: var(--gold-100); border-left: 3px solid var(--gold-600);">
+                    <div class="section-heading">
+                        <h2><i class="bi bi-hourglass-split me-1"></i>Finalize your attendance</h2>
+                        <span class="section-note"><?php echo count($pendingEvaluations); ?> pending</span>
+                    </div>
+                    <p class="small text-secondary">
+                        You were marked present at these events. Your attendance is <strong>not final</strong> until you
+                        submit the evaluation — it also earns you the evaluation points.
+                    </p>
+                    <div class="table-responsive">
+                        <table class="table align-middle mb-0">
+                            <thead><tr><th>Event</th><th>Attended</th><th>Rating &amp; comments</th></tr></thead>
+                            <tbody>
+                            <?php foreach ($pendingEvaluations as $pe): ?>
+                                <tr>
+                                    <td>
+                                        <div class="fw-semibold"><?php echo e((string) $pe['title']); ?></div>
+                                        <span class="badge text-bg-light text-capitalize"><?php echo e((string) $pe['status']); ?></span>
+                                    </td>
+                                    <td class="small text-secondary"><?php echo e($pe['attended_at'] ? date('M j, Y g:i A', strtotime((string) $pe['attended_at'])) : '—'); ?></td>
+                                    <td style="min-width:280px;">
+                                        <form method="post" action="events.php" class="d-flex flex-wrap align-items-center gap-1">
+                                            <input type="hidden" name="csrf_token" value="<?php echo e((string) $_SESSION['csrf_yevents_token']); ?>">
+                                            <input type="hidden" name="action" value="evaluate">
+                                            <input type="hidden" name="event_id" value="<?php echo (int) $pe['id']; ?>">
+                                            <select name="rating" class="form-select form-select-sm" style="width:auto;" required aria-label="Rating">
+                                                <option value="">Rate…</option>
+                                                <?php for ($i = 5; $i >= 1; $i--): ?><option value="<?php echo $i; ?>"><?php echo $i; ?> — <?php echo ['', 'Poor', 'Fair', 'Good', 'Very good', 'Excellent'][$i]; ?></option><?php endfor; ?>
+                                            </select>
+                                            <input type="text" name="comments" class="form-control form-control-sm" style="width:170px;" maxlength="500" placeholder="Comment (optional)">
+                                            <button class="btn btn-sm btn-sked" type="submit"><i class="bi bi-check-lg me-1"></i>Finalize</button>
+                                        </form>
+                                    </td>
+                                </tr>
+                            <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            <?php endif; ?>
+
             <?php
-                $renderBrowseTable('Ongoing Events', $ongoingEvents, 'bi-play-circle', 'No events are currently ongoing for your barangay.');
+                $renderBrowseTable('Ongoing Events', $ongoingEvents, 'bi-play-circle', 'No events are currently ongoing for your barangay.', 'ongoingEventsTable');
             ?>
 
             <div class="docket-panel mb-4">
@@ -213,8 +257,8 @@ $renderBrowseTable = function (string $title, array $list, string $icon, string 
                     <div class="text-center text-secondary py-5"><i class="bi bi-clock-history fs-1 d-block mb-2"></i>No past events you've joined yet.</div>
                 <?php else: ?>
                     <div class="table-responsive">
-                        <table class="table align-middle">
-                            <thead><tr><th>Event</th><th>Date</th><th>My Status</th><th>Feedback</th></tr></thead>
+                        <table class="table align-middle" id="pastEventsTable">
+                            <thead><tr><th>Event</th><th>Date</th><th>My Status</th><th>Rating &amp; comments <span class="fw-normal text-secondary small">(finalizes attendance)</span></th></tr></thead>
                             <tbody>
                             <?php foreach ($pastParticipations as $p): ?>
                                 <?php $rateInfo = $evaluableById[(int) $p['id']] ?? null; ?>
@@ -224,24 +268,33 @@ $renderBrowseTable = function (string $title, array $list, string $icon, string 
                                         <?php if (!empty($p['team_name'])): ?><div class="small text-secondary">Team: <?php echo e((string) $p['team_name']); ?></div><?php endif; ?>
                                     </td>
                                     <td class="small text-secondary"><?php echo e($p['event_date'] ? date('M j, Y', strtotime((string) $p['event_date'])) : 'TBA'); ?></td>
-                                    <td><span class="badge text-bg-<?php echo e($participantStatusBadge((string) $p['my_status'])); ?> text-capitalize"><?php echo e(str_replace('_', ' ', (string) $p['my_status'])); ?></span></td>
-                                    <td style="min-width:260px;">
+                                    <td>
+                                        <span class="badge text-bg-<?php echo e($participantStatusBadge((string) $p['my_status'])); ?> text-capitalize"><?php echo e(str_replace('_', ' ', (string) $p['my_status'])); ?></span>
+                                        <?php if ((string) $p['my_status'] === 'attended'): ?>
+                                            <?php $isFinal = $rateInfo === null || $rateInfo['my_rating'] !== null; ?>
+                                            <div class="small mt-1 <?php echo $isFinal ? 'text-success' : 'text-warning-emphasis'; ?>">
+                                                <i class="bi <?php echo $isFinal ? 'bi-check-circle-fill' : 'bi-hourglass-split'; ?> me-1"></i><?php echo $isFinal ? 'Finalized' : 'Not final'; ?>
+                                            </div>
+                                        <?php endif; ?>
+                                    </td>
+                                    <td style="min-width:290px;">
                                         <?php if ($rateInfo === null): ?>
-                                            <span class="small text-secondary">—</span>
+                                            <span class="small text-secondary"><?php echo (string) $p['my_status'] === 'attended' ? 'Evaluation not open' : '—'; ?></span>
                                         <?php elseif ($rateInfo['my_rating'] !== null): ?>
                                             <span class="badge text-bg-success d-block mb-1" style="width:fit-content;"><i class="bi bi-star-fill me-1"></i>You rated <?php echo (int) $rateInfo['my_rating']; ?>/5</span>
                                             <?php if (!empty($rateInfo['my_comments'])): ?><div class="small text-secondary fst-italic">"<?php echo e((string) $rateInfo['my_comments']); ?>"</div><?php endif; ?>
                                         <?php else: ?>
+                                            <span class="badge text-bg-warning mb-1"><i class="bi bi-exclamation-circle me-1"></i>Needs evaluation</span>
                                             <form method="post" action="events.php" class="d-flex flex-wrap align-items-center gap-1">
                                                 <input type="hidden" name="csrf_token" value="<?php echo e((string) $_SESSION['csrf_yevents_token']); ?>">
                                                 <input type="hidden" name="action" value="evaluate">
                                                 <input type="hidden" name="event_id" value="<?php echo (int) $p['id']; ?>">
-                                                <select name="rating" class="form-select form-select-sm" style="width:auto;" required>
+                                                <select name="rating" class="form-select form-select-sm" style="width:auto;" required aria-label="Rating">
                                                     <option value="">Rate…</option>
                                                     <?php for ($i = 5; $i >= 1; $i--): ?><option value="<?php echo $i; ?>"><?php echo $i; ?> — <?php echo ['', 'Poor', 'Fair', 'Good', 'Very good', 'Excellent'][$i]; ?></option><?php endfor; ?>
                                                 </select>
                                                 <input type="text" name="comments" class="form-control form-control-sm" style="width:150px;" maxlength="500" placeholder="Comment (optional)">
-                                                <button class="btn btn-sm btn-sked" type="submit"><i class="bi bi-star"></i></button>
+                                                <button class="btn btn-sm btn-sked" type="submit"><i class="bi bi-check-lg me-1"></i>Finalize</button>
                                             </form>
                                         <?php endif; ?>
                                     </td>
@@ -254,12 +307,19 @@ $renderBrowseTable = function (string $title, array $list, string $icon, string 
             </div>
 
             <?php
-                $renderBrowseTable('Upcoming Events', $upcomingEvents, 'bi-calendar-event', 'No upcoming events for your barangay right now. Check back soon.');
+                $renderBrowseTable('Upcoming Events', $upcomingEvents, 'bi-calendar-event', 'No upcoming events for your barangay right now. Check back soon.', 'upcomingEventsTable');
             ?>
 
             <?php endif; ?>
         </main>
     </div>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="../../js/table-tools.js"></script>
+    <script>
+        ['ongoingEventsTable', 'upcomingEventsTable'].forEach(function (id) {
+            new SkedTableTools('#' + id, { pageSize: 8, filters: [{ label: 'Scope' }] });
+        });
+        new SkedTableTools('#pastEventsTable', { pageSize: 8, filters: [{ label: 'My Status' }] });
+    </script>
 </body>
 </html>

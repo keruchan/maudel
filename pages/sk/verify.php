@@ -157,12 +157,12 @@ $counts = $barangayId > 0 ? sked_verification_counts_for_barangay($barangayId) :
                     </div>
                 <?php else: ?>
                     <div class="table-responsive">
-                        <table class="table align-middle">
+                        <table class="table align-middle" id="verifyTable">
                             <thead>
                                 <tr>
                                     <th scope="col">Name</th>
                                     <th scope="col">Age</th>
-                                    <th scope="col">Contact</th>
+                                    <th scope="col">Contact / Address</th>
                                     <th scope="col">Registered</th>
                                     <th scope="col" class="text-end">Action</th>
                                 </tr>
@@ -188,6 +188,7 @@ $counts = $barangayId > 0 ? sked_verification_counts_for_barangay($barangayId) :
                                         <td class="small">
                                             <div><?php echo e((string) $y['email']); ?></div>
                                             <?php if (!empty($y['mobile'])): ?><div class="text-secondary"><?php echo e((string) $y['mobile']); ?></div><?php endif; ?>
+                                            <div class="text-secondary"><?php echo e((!empty($y['purok']) ? (string) $y['purok'] . ', ' : '') . ($barangayName !== '' ? 'Barangay ' . $barangayName . ', ' : '') . SKED_DEFAULT_MUNICIPALITY . ', ' . SKED_PROVINCE_NAME); ?></div>
                                         </td>
                                         <td class="small text-secondary"><?php echo e(date('M j, Y', strtotime((string) $y['created_at']))); ?></td>
                                         <td class="text-end">
@@ -224,5 +225,9 @@ $counts = $barangayId > 0 ? sked_verification_counts_for_barangay($barangayId) :
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="../../js/table-tools.js"></script>
+    <script>
+        new SkedTableTools('#verifyTable', { pageSize: 12 });
+    </script>
 </body>
 </html>

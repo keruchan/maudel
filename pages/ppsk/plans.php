@@ -69,7 +69,7 @@ $abyips = sked_abyip_list_all();
                     <div class="text-center text-secondary py-4">No CBYDP submitted yet.</div>
                 <?php else: ?>
                     <div class="table-responsive">
-                        <table class="table align-middle">
+                        <table class="table align-middle" id="cbydpOversightTable">
                             <thead><tr><th>Barangay</th><th>Cycle</th><th>Status</th><th>Signed Copy</th><th class="text-end">Action</th></tr></thead>
                             <tbody>
                             <?php foreach ($cbydps as $p): ?>
@@ -96,7 +96,7 @@ $abyips = sked_abyip_list_all();
                     <div class="text-center text-secondary py-4">No ABYIP submitted yet.</div>
                 <?php else: ?>
                     <div class="table-responsive">
-                        <table class="table align-middle">
+                        <table class="table align-middle" id="abyipOversightTable">
                             <thead><tr><th>Barangay</th><th>Year</th><th>Status</th><th>Signed Copy</th><th class="text-end">Action</th></tr></thead>
                             <tbody>
                             <?php foreach ($abyips as $p): ?>
@@ -119,5 +119,10 @@ $abyips = sked_abyip_list_all();
         </main>
     </div>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="../../js/table-tools.js"></script>
+    <script>
+        new SkedTableTools('#cbydpOversightTable', { pageSize: 10, filters: [{ label: 'Status' }] });
+        new SkedTableTools('#abyipOversightTable', { pageSize: 10, filters: [{ label: 'Status' }] });
+    </script>
 </body>
 </html>

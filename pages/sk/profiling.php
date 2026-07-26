@@ -125,7 +125,7 @@ $completedCount = count(array_filter($youths, static fn($y) => $y['has_profile']
                     </div>
                 <?php else: ?>
                     <div class="table-responsive">
-                        <table class="table align-middle">
+                        <table class="table align-middle" id="profilingTable">
                             <thead>
                                 <tr>
                                     <th scope="col">Name</th>
@@ -169,5 +169,9 @@ $completedCount = count(array_filter($youths, static fn($y) => $y['has_profile']
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="../../js/table-tools.js"></script>
+    <script>
+        new SkedTableTools('#profilingTable', { pageSize: 12, filters: [{ label: 'Status' }, { label: 'KK Profile' }] });
+    </script>
 </body>
 </html>

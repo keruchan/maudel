@@ -34,6 +34,7 @@ $categories = sked_interest_categories();
 
 $flash = ['type' => '', 'msg' => ''];
 $reopenModal = false;
+$formErrors = [];
 
 if (empty($_SESSION['csrf_events_token'])) {
     $_SESSION['csrf_events_token'] = bin2hex(random_bytes(32));
@@ -42,7 +43,8 @@ if (empty($_SESSION['csrf_events_token'])) {
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $token = (string) ($_POST['csrf_token'] ?? '');
     if (!hash_equals((string) $_SESSION['csrf_events_token'], $token)) {
-        $flash = ['type' => 'danger', 'msg' => 'Security validation failed. Please try again.'];
+        $formErrors = ['Security validation failed. Please try again.'];
+        $reopenModal = true;
     } elseif ($barangayId <= 0) {
         $flash = ['type' => 'danger', 'msg' => 'Your account is not assigned to a barangay.'];
     } else {
@@ -50,12 +52,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $data = $_POST;
         $data['scope'] = 'barangay';
         $r = sked_create_event($creator, $data, $_FILES['event_image'] ?? null);
-        $flash = $r['ok']
-            ? ['type' => 'success', 'msg' => 'Event "' . e((string) $_POST['title']) . '" created' . (!empty($_POST['publish']) ? ' and published.' : ' as a draft.')]
-            : ['type' => 'danger', 'msg' => implode(' ', array_map('e', $r['errors']))];
-        $reopenModal = !$r['ok'];
+        if ($r['ok']) {
+            $flash = ['type' => 'success', 'msg' => 'Event "' . e((string) $_POST['title']) . '" created' . (!empty($_POST['publish']) ? ' and published.' : ' as a draft.')];
+        } else {
+            $formErrors = $r['errors'];
+            $reopenModal = true;
+        }
     }
 }
+
+// Keep everything the user typed when the modal is coming back with errors.
+sked_form_retain($reopenModal);
 
 $events = $barangayId > 0 ? sked_events_for_manager($role, $skUserId, $barangayId) : [];
 $participants = $barangayId > 0 ? sked_participants_for_manager($role, $barangayId) : [];
@@ -63,10 +70,6 @@ $ongoingEvents = array_values(array_filter($events, static fn ($e) => sked_event
 $pastEvents = array_values(array_filter($events, static fn ($e) => sked_event_time_bucket($e) === 'past'));
 $upcomingEvents = array_values(array_filter($events, static fn ($e) => sked_event_time_bucket($e) === 'upcoming'));
 
-$statusBadge = static function (string $s): string {
-    $map = ['draft' => 'secondary', 'published' => 'primary', 'confirmed' => 'info', 'ongoing' => 'info', 'completed' => 'success', 'cancelled' => 'danger', 'evaluation' => 'warning', 'closed' => 'dark'];
-    return $map[$s] ?? 'secondary';
-};
 $participantStatusBadge = static function (string $s): string {
     $map = ['attended' => 'success', 'no_show' => 'danger', 'registered' => 'primary', 'interested' => 'info'];
     return $map[$s] ?? 'secondary';
@@ -77,7 +80,7 @@ $shareBase = (function () {
     return $scheme . '://' . $host . '/SKed/pages/public/event.php?t=';
 })();
 
-$renderEventsTable = function (string $title, array $list, string $icon, string $emptyMsg) use ($statusBadge, $shareBase) {
+$renderEventsTable = function (string $title, array $list, string $icon, string $emptyMsg, string $tableId) use ($shareBase) {
     ?>
     <div class="docket-panel mb-4">
         <div class="section-heading">
@@ -88,7 +91,7 @@ $renderEventsTable = function (string $title, array $list, string $icon, string 
             <div class="text-center text-secondary py-5"><i class="bi <?php echo e($icon); ?> fs-1 d-block mb-2"></i><?php echo e($emptyMsg); ?></div>
         <?php else: ?>
             <div class="table-responsive">
-                <table class="table align-middle">
+                <table class="table align-middle" id="<?php echo e($tableId); ?>">
                     <thead>
                         <tr>
                             <th>Event</th><th>Date</th><th>Type</th><th>Status</th><th>Participants</th><th>Share Link</th><th class="text-end">Action</th>
@@ -115,10 +118,25 @@ $renderEventsTable = function (string $title, array $list, string $icon, string 
                             </td>
                             <td class="small text-secondary"><?php echo e($ev['event_date'] ? date('M j, Y', strtotime((string) $ev['event_date'])) : 'TBA'); ?></td>
                             <td class="small"><?php echo $ev['type'] === 'register' ? 'Register' : 'Join'; ?></td>
-                            <td><span class="badge text-bg-<?php echo e($statusBadge((string) $ev['status'])); ?>"><?php echo e(ucfirst((string) $ev['status'])); ?></span></td>
+                            <td>
+                                <span class="badge text-bg-<?php echo e(sked_event_display_badge_class($ev)); ?>"><?php echo e(sked_event_display_status_label($ev)); ?></span>
+                                <?php if (sked_event_needs_closeout($ev)): ?>
+                                    <div class="small text-warning-emphasis mt-1" title="The event date has passed but the status was never advanced."><i class="bi bi-exclamation-triangle-fill me-1"></i>Needs closing out</div>
+                                <?php endif; ?>
+                            </td>
                             <td class="tabular">
                                 <?php echo $ev['type'] === 'register' ? ($c['registered'] + $c['attended']) . ($ev['capacity'] !== null ? ' / ' . (int) $ev['capacity'] : '') : $c['active']; ?>
                                 <span class="small text-secondary d-block"><?php echo $ev['type'] === 'register' ? 'registered' : 'interested'; ?><?php echo $c['attended'] > 0 ? ' · ' . $c['attended'] . ' attended' : ''; ?></span>
+                                <?php if (sked_event_time_bucket($ev) === 'past'): ?>
+                                    <?php $r = sked_event_rating((int) $ev['id']); ?>
+                                    <span class="small d-block <?php echo $r['count'] > 0 ? 'text-success' : 'text-secondary'; ?>">
+                                        <?php if ($r['count'] > 0): ?>
+                                            <i class="bi bi-star-fill me-1"></i><?php echo e((string) $r['avg']); ?>/5 from <?php echo (int) $r['count']; ?> evaluation<?php echo $r['count'] === 1 ? '' : 's'; ?>
+                                        <?php else: ?>
+                                            <i class="bi bi-star me-1"></i>No evaluations yet
+                                        <?php endif; ?>
+                                    </span>
+                                <?php endif; ?>
                             </td>
                             <td>
                                 <div class="input-group input-group-sm" style="max-width:220px;">
@@ -183,9 +201,9 @@ $renderEventsTable = function (string $title, array $list, string $icon, string 
             <?php else: ?>
 
             <?php
-                $renderEventsTable('Ongoing Events', $ongoingEvents, 'bi-play-circle', 'No events are currently ongoing.');
-                $renderEventsTable('Past Events', $pastEvents, 'bi-clock-history', 'No past events yet.');
-                $renderEventsTable('Upcoming Events', $upcomingEvents, 'bi-calendar-x', 'No upcoming events. Click "Create Event" to post one.');
+                $renderEventsTable('Ongoing Events', $ongoingEvents, 'bi-play-circle', 'No events are currently ongoing.', 'ongoingEventsTable');
+                $renderEventsTable('Past Events', $pastEvents, 'bi-clock-history', 'No past events yet.', 'pastEventsTable');
+                $renderEventsTable('Upcoming Events', $upcomingEvents, 'bi-calendar-x', 'No upcoming events. Click "Create Event" to post one.', 'upcomingEventsTable');
             ?>
 
             <div class="docket-panel">
@@ -197,7 +215,7 @@ $renderEventsTable = function (string $title, array $list, string $icon, string 
                     <div class="text-center text-secondary py-5"><i class="bi bi-people fs-1 d-block mb-2"></i>No participants yet.</div>
                 <?php else: ?>
                     <div class="table-responsive">
-                        <table class="table align-middle">
+                        <table class="table align-middle" id="participantsTable">
                             <thead>
                                 <tr><th>Event</th><th>Participant</th><th>Team</th><th>Status</th><th>Joined</th></tr>
                             </thead>
@@ -231,72 +249,78 @@ $renderEventsTable = function (string $title, array $list, string $icon, string 
                         <form class="create-event-form" method="post" action="events.php" enctype="multipart/form-data" novalidate>
                             <div class="modal-body">
                                 <input type="hidden" name="csrf_token" value="<?php echo e((string) $_SESSION['csrf_events_token']); ?>">
+
+                                <?php sked_render_form_errors($formErrors, 'The event could not be created:'); ?>
+
                                 <div class="mb-3">
                                     <label for="title" class="form-label">Title</label>
-                                    <input type="text" class="form-control" id="title" name="title" maxlength="160" required>
+                                    <input type="text" class="form-control" id="title" name="title" maxlength="160" value="<?php echo e(sked_old('title')); ?>" required>
                                 </div>
                                 <div class="mb-3">
                                     <label for="description" class="form-label">Description</label>
-                                    <textarea class="form-control" id="description" name="description" rows="2" maxlength="2000"></textarea>
+                                    <textarea class="form-control" id="description" name="description" rows="2" maxlength="2000"><?php echo e(sked_old('description')); ?></textarea>
                                 </div>
                                 <div class="mb-3">
                                     <label for="event_image" class="form-label">Event photo</label>
                                     <input type="file" class="form-control" id="event_image" name="event_image" accept="image/jpeg,image/png,image/webp">
-                                    <div class="form-text">Optional JPG, PNG, or WebP image up to 5 MB.</div>
+                                    <div class="form-text">
+                                        Optional JPG, PNG, or WebP image up to 5 MB.
+                                        <?php if ($reopenModal): ?><span class="text-warning-emphasis">A previously chosen photo must be picked again — browsers never resend file inputs.</span><?php endif; ?>
+                                    </div>
                                 </div>
                                 <div class="create-event-grid">
                                     <div class="create-event-field">
                                         <label for="category" class="form-label">Category</label>
                                         <select class="form-select" id="category" name="category">
                                             <option value="">— None —</option>
-                                            <?php foreach ($categories as $c): ?><option value="<?php echo e($c); ?>"><?php echo e($c); ?></option><?php endforeach; ?>
+                                            <?php foreach ($categories as $c): ?><option value="<?php echo e($c); ?>" <?php echo sked_old_selected('category', $c) ? 'selected' : ''; ?>><?php echo e($c); ?></option><?php endforeach; ?>
                                         </select>
                                     </div>
                                     <div class="create-event-field">
                                         <label for="type" class="form-label">Type</label>
                                         <select class="form-select" id="type" name="type">
-                                            <option value="interested">Interested / Join (no cap)</option>
-                                            <option value="register">Register (limited slots)</option>
+                                            <option value="interested" <?php echo sked_old_selected('type', 'interested', true) ? 'selected' : ''; ?>>Interested / Join (no cap)</option>
+                                            <option value="register" <?php echo sked_old_selected('type', 'register') ? 'selected' : ''; ?>>Register (limited slots)</option>
                                         </select>
                                     </div>
                                 </div>
                                 <div class="mb-3">
                                     <label for="location" class="form-label">Location</label>
-                                    <input type="text" class="form-control" id="location" name="location" maxlength="200">
+                                    <input type="text" class="form-control" id="location" name="location" maxlength="200" value="<?php echo e(sked_old('location')); ?>">
                                 </div>
                                 <div class="create-event-grid">
                                     <div class="create-event-field">
                                         <label for="event_date" class="form-label">Event date</label>
-                                        <input type="date" class="form-control" id="event_date" name="event_date" min="<?php echo e(date('Y-m-d')); ?>" required>
+                                        <input type="date" class="form-control" id="event_date" name="event_date" min="<?php echo e(date('Y-m-d')); ?>" value="<?php echo e(sked_old('event_date')); ?>" required>
                                     </div>
                                     <div class="create-event-field">
                                         <label for="registration_deadline" class="form-label">Reg. deadline</label>
-                                        <input type="date" class="form-control" id="registration_deadline" name="registration_deadline" min="<?php echo e(date('Y-m-d')); ?>">
+                                        <input type="date" class="form-control" id="registration_deadline" name="registration_deadline" min="<?php echo e(date('Y-m-d')); ?>" value="<?php echo e(sked_old('registration_deadline')); ?>">
                                     </div>
                                     <div class="create-event-field">
                                         <label for="start_time" class="form-label">Start time</label>
-                                        <input type="time" class="form-control" id="start_time" name="start_time">
+                                        <input type="time" class="form-control" id="start_time" name="start_time" value="<?php echo e(sked_old('start_time')); ?>">
                                     </div>
                                     <div class="create-event-field">
                                         <label for="end_time" class="form-label">End time</label>
-                                        <input type="time" class="form-control" id="end_time" name="end_time">
+                                        <input type="time" class="form-control" id="end_time" name="end_time" value="<?php echo e(sked_old('end_time')); ?>">
                                     </div>
                                     <div class="create-event-field">
                                         <label for="min_participants" class="form-label">Min. participants</label>
-                                        <input type="number" class="form-control" id="min_participants" name="min_participants" min="0" value="0">
+                                        <input type="number" class="form-control" id="min_participants" name="min_participants" min="0" value="<?php echo e(sked_old('min_participants', '0')); ?>">
                                     </div>
                                     <div class="create-event-field">
                                         <label for="capacity" class="form-label">Capacity <span class="text-secondary fw-normal">(register)</span></label>
-                                        <input type="number" class="form-control" id="capacity" name="capacity" min="1" placeholder="e.g. 24">
+                                        <input type="number" class="form-control" id="capacity" name="capacity" min="1" placeholder="e.g. 24" value="<?php echo e(sked_old('capacity')); ?>">
                                     </div>
                                 </div>
                                 <div class="create-event-checks">
                                     <div class="form-check">
-                                        <input class="form-check-input" type="checkbox" id="is_team_sport" name="is_team_sport" value="1">
+                                        <input class="form-check-input" type="checkbox" id="is_team_sport" name="is_team_sport" value="1" <?php echo sked_old_checked('is_team_sport', '1') ? 'checked' : ''; ?>>
                                         <label class="form-check-label" for="is_team_sport">Team sport (registrants enter a team name)</label>
                                     </div>
                                     <div class="form-check">
-                                        <input class="form-check-input" type="checkbox" id="publish" name="publish" value="1" checked>
+                                        <input class="form-check-input" type="checkbox" id="publish" name="publish" value="1" <?php echo sked_old_checked('publish', '1', true) ? 'checked' : ''; ?>>
                                         <label class="form-check-label" for="publish">Publish now (visible to youth)</label>
                                     </div>
                                 </div>
@@ -313,14 +337,13 @@ $renderEventsTable = function (string $title, array $list, string $icon, string 
         </main>
     </div>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <?php sked_render_autoshow_modals_script(); ?>
+    <script src="../../js/table-tools.js"></script>
     <script>
-        // Re-open the Create Event modal automatically if the just-submitted form had errors.
-        document.addEventListener('DOMContentLoaded', function () {
-            var modalEl = document.getElementById('createEventModal');
-            if (modalEl && modalEl.dataset.autoshow === '1') {
-                new bootstrap.Modal(modalEl).show();
-            }
+        ['ongoingEventsTable', 'pastEventsTable', 'upcomingEventsTable'].forEach(function (id) {
+            new SkedTableTools('#' + id, { pageSize: 8, filters: [{ label: 'Type' }, { label: 'Status' }] });
         });
+        new SkedTableTools('#participantsTable', { pageSize: 12, filters: [{ label: 'Status' }] });
     </script>
 </body>
 </html>

@@ -32,7 +32,7 @@ function sked_pending_youth_for_barangay(int $barangayId): array
         return [];
     }
     $stmt = sked_db()->prepare(
-        "SELECT id, name, email, mobile, birthdate, username, created_at
+        "SELECT id, name, email, mobile, birthdate, username, purok, created_at
            FROM users
           WHERE role = 'youth' AND status = 'pending' AND barangay_id = :bgy
           ORDER BY created_at ASC, id ASC"
@@ -61,7 +61,7 @@ function sked_youths_for_barangay(int $barangayId): array
         return [];
     }
     $stmt = sked_db()->prepare(
-        "SELECT u.id, u.name, u.status, u.email, u.mobile, u.birthdate, u.username, u.created_at,
+        "SELECT u.id, u.name, u.status, u.email, u.mobile, u.birthdate, u.username, u.purok, u.created_at,
                 (yp.user_id IS NOT NULL) AS has_profile
            FROM users u
       LEFT JOIN youth_profiles yp ON yp.user_id = u.id
@@ -122,7 +122,7 @@ function sked_kk_members_for_barangay(int $barangayId, string $statusFilter = ''
 
     $stmt = sked_db()->prepare(
         "SELECT u.id, u.name, u.status, u.email, u.mobile, u.birthdate, u.sex_assigned_at_birth,
-                u.username, u.created_at,
+                u.username, u.purok, u.created_at,
                 (yp.user_id IS NOT NULL) AS has_profile,
                 COALESCE(pts.total, 0) AS points
            FROM users u

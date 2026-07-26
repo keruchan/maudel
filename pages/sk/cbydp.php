@@ -23,6 +23,7 @@ $displayName = !empty($_SESSION['name']) ? (string) $_SESSION['name'] : 'SK Chai
 $todayLabel = date('l, F j, Y');
 
 $flash = ['type' => '', 'msg' => ''];
+$formErrors = [];
 if (empty($_SESSION['csrf_cbydp_token'])) {
     $_SESSION['csrf_cbydp_token'] = bin2hex(random_bytes(32));
 }
@@ -30,7 +31,8 @@ if (empty($_SESSION['csrf_cbydp_token'])) {
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $token = (string) ($_POST['csrf_token'] ?? '');
     if (!hash_equals((string) $_SESSION['csrf_cbydp_token'], $token)) {
-        $flash = ['type' => 'danger', 'msg' => 'Security validation failed. Please try again.'];
+        $formErrors = ['Security validation failed. Please try again.'];
+        sked_form_retain(true);
     } else {
         $creator = ['id' => $userId, 'role' => $role, 'name' => $displayName, 'barangay_id' => $barangayId];
         $r = sked_cbydp_create($creator, (int) ($_POST['cy_year_start'] ?? 0), (string) ($_POST['prepared_by_name'] ?? ''));
@@ -38,7 +40,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             header('Location: ../manage/cbydp_plan.php?id=' . $r['plan_id']);
             exit;
         }
-        $flash = ['type' => 'danger', 'msg' => implode(' ', $r['errors'])];
+        $formErrors = $r['errors'];
+        sked_form_retain(true);
     }
 }
 
@@ -93,14 +96,17 @@ $defaultYear = (int) date('Y');
                         <div class="section-heading"><h2>Start a New Cycle</h2></div>
                         <form method="post" action="cbydp.php">
                             <input type="hidden" name="csrf_token" value="<?php echo e((string) $_SESSION['csrf_cbydp_token']); ?>">
+
+                            <?php sked_render_form_errors($formErrors, 'The CBYDP could not be created:'); ?>
+
                             <div class="mb-3">
                                 <label for="cy_year_start" class="form-label">Starting year (covers 3 years)</label>
-                                <input type="number" class="form-control" id="cy_year_start" name="cy_year_start" value="<?php echo (int) $defaultYear; ?>" min="2020" max="2100" required>
+                                <input type="number" class="form-control" id="cy_year_start" name="cy_year_start" value="<?php echo e(sked_old('cy_year_start', (string) $defaultYear)); ?>" min="2020" max="2100" required>
                                 <small class="text-secondary">e.g. <?php echo (int) $defaultYear; ?> covers <?php echo (int) $defaultYear; ?>–<?php echo (int) $defaultYear + 2; ?>.</small>
                             </div>
                             <div class="mb-3">
                                 <label for="prepared_by_name" class="form-label">Prepared by <span class="text-secondary fw-normal">(SK Secretary)</span></label>
-                                <input type="text" class="form-control" id="prepared_by_name" name="prepared_by_name" maxlength="150" placeholder="Full name">
+                                <input type="text" class="form-control" id="prepared_by_name" name="prepared_by_name" maxlength="150" placeholder="Full name" value="<?php echo e(sked_old('prepared_by_name')); ?>">
                             </div>
                             <p class="text-secondary small">Approved by will show as <?php echo e($displayName); ?> (SK Chairperson).</p>
                             <button type="submit" class="btn btn-sked w-100"><i class="bi bi-plus-lg me-1"></i>Create CBYDP</button>
@@ -114,7 +120,7 @@ $defaultYear = (int) date('Y');
                             <div class="text-center text-secondary py-5"><i class="bi bi-clipboard-data fs-1 d-block mb-2"></i>No CBYDP yet. Start one on the left.</div>
                         <?php else: ?>
                             <div class="table-responsive">
-                                <table class="table align-middle">
+                                <table class="table align-middle" id="cbydpTable">
                                     <thead><tr><th>Cycle</th><th>Status</th><th class="text-end">Action</th></tr></thead>
                                     <tbody>
                                     <?php foreach ($plans as $p): ?>
@@ -135,5 +141,9 @@ $defaultYear = (int) date('Y');
         </main>
     </div>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="../../js/table-tools.js"></script>
+    <script>
+        new SkedTableTools('#cbydpTable', { pageSize: 10, filters: [{ label: 'Status' }] });
+    </script>
 </body>
 </html>

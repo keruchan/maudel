@@ -84,13 +84,13 @@ $sessionBarangayId = ($isAuthenticated && !empty($_SESSION['barangay_id'])) ? (i
 $sessionBarangayName = $sessionBarangayId !== null ? sked_barangay_name($sessionBarangayId) : '';
 $barangayGeoPoints = [
     'Acevida' => [14.4070, 121.4380],
-    'Bagong Pag-asa (Poblacion)' => [14.4205, 121.4450],
-    'Bagumbarangay (Poblacion)' => [14.4210, 121.4480],
+    'Bagong Pag-Asa' => [14.4205, 121.4450],
+    'Bagumbarangay' => [14.4210, 121.4480],
     'Buhay' => [14.3880, 121.4360],
-    'G. Redor (Poblacion)' => [14.4230, 121.4460],
+    'G. Redor' => [14.4230, 121.4460],
     'Gen. Luna' => [14.4300, 121.4550],
     'Halayhayin' => [14.4050, 121.4640],
-    'J. Rizal (Poblacion)' => [14.4180, 121.4470],
+    'J. Rizal' => [14.4180, 121.4470],
     'Kapatalan' => [14.4500, 121.4550],
     'Laguio' => [14.4400, 121.4330],
     'Liyang' => [14.4230, 121.4310],

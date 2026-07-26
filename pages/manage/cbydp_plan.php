@@ -31,6 +31,9 @@ $linkBase = '../' . $role . '/';
 $todayLabel = date('l, F j, Y');
 
 $planId = (int) ($_GET['id'] ?? $_POST['plan_id'] ?? 0);
+// Keep whatever was typed when a submission failed, so nothing is retyped.
+sked_form_retain(($flash['type'] ?? '') === 'danger');
+
 $plan = sked_cbydp_get($planId);
 if ($plan === null) {
     header('Location: ' . ($role === 'sk' ? 'cbydp.php' : 'dashboard.php'));
@@ -166,7 +169,7 @@ $totalBudget = sked_cbydp_total_budget($plan);
                         </div>
                         <div class="col-md-6">
                             <label class="form-label">Agenda Statement</label>
-                            <input type="text" name="agenda_statement" class="form-control" maxlength="1000" placeholder="What this section aims to achieve">
+                            <input type="text" name="agenda_statement" class="form-control" maxlength="1000" value="<?php echo e(sked_old('agenda_statement')); ?>" placeholder="What this section aims to achieve">
                         </div>
                         <div class="col-md-2"><button type="submit" class="btn btn-sked w-100"><i class="bi bi-plus-lg"></i>Add</button></div>
                     </form>
@@ -236,15 +239,15 @@ $totalBudget = sked_cbydp_total_budget($plan);
                             <input type="hidden" name="csrf_token" value="<?php echo e((string) $_SESSION['csrf_cbydpplan_token']); ?>">
                             <input type="hidden" name="action" value="add_item">
                             <input type="hidden" name="section_id" value="<?php echo (int) $section['id']; ?>">
-                            <div class="col-md-4"><input type="text" name="youth_development_concern" class="form-control form-control-sm" placeholder="Youth Development Concern *" required></div>
-                            <div class="col-md-4"><input type="text" name="objective" class="form-control form-control-sm" placeholder="Objective"></div>
-                            <div class="col-md-4"><input type="text" name="performance_indicator" class="form-control form-control-sm" placeholder="Performance Indicator"></div>
-                            <div class="col-md-4"><input type="text" name="target_year1" class="form-control form-control-sm" placeholder="Target <?php echo (int) $plan['cy_year_start']; ?>"></div>
-                            <div class="col-md-4"><input type="text" name="target_year2" class="form-control form-control-sm" placeholder="Target <?php echo (int) $plan['cy_year_start'] + 1; ?>"></div>
-                            <div class="col-md-4"><input type="text" name="target_year3" class="form-control form-control-sm" placeholder="Target <?php echo (int) $plan['cy_year_start'] + 2; ?>"></div>
-                            <div class="col-md-6"><input type="text" name="ppas" class="form-control form-control-sm" placeholder="PPAs"></div>
-                            <div class="col-md-3"><input type="number" step="0.01" min="0" name="budget" class="form-control form-control-sm" placeholder="Budget"></div>
-                            <div class="col-md-3"><input type="text" name="person_responsible" class="form-control form-control-sm" placeholder="Person Responsible"></div>
+                            <div class="col-md-4"><input type="text" name="youth_development_concern" class="form-control form-control-sm" value="<?php echo e(sked_old('youth_development_concern')); ?>" placeholder="Youth Development Concern *" required></div>
+                            <div class="col-md-4"><input type="text" name="objective" class="form-control form-control-sm" value="<?php echo e(sked_old('objective')); ?>" placeholder="Objective"></div>
+                            <div class="col-md-4"><input type="text" name="performance_indicator" class="form-control form-control-sm" value="<?php echo e(sked_old('performance_indicator')); ?>" placeholder="Performance Indicator"></div>
+                            <div class="col-md-4"><input type="text" name="target_year1" class="form-control form-control-sm" value="<?php echo e(sked_old('target_year1')); ?>" placeholder="Target <?php echo (int) $plan['cy_year_start']; ?>"></div>
+                            <div class="col-md-4"><input type="text" name="target_year2" class="form-control form-control-sm" value="<?php echo e(sked_old('target_year2')); ?>" placeholder="Target <?php echo (int) $plan['cy_year_start'] + 1; ?>"></div>
+                            <div class="col-md-4"><input type="text" name="target_year3" class="form-control form-control-sm" value="<?php echo e(sked_old('target_year3')); ?>" placeholder="Target <?php echo (int) $plan['cy_year_start'] + 2; ?>"></div>
+                            <div class="col-md-6"><input type="text" name="ppas" class="form-control form-control-sm" value="<?php echo e(sked_old('ppas')); ?>" placeholder="PPAs"></div>
+                            <div class="col-md-3"><input type="number" step="0.01" min="0" name="budget" class="form-control form-control-sm" value="<?php echo e(sked_old('budget')); ?>" placeholder="Budget"></div>
+                            <div class="col-md-3"><input type="text" name="person_responsible" class="form-control form-control-sm" value="<?php echo e(sked_old('person_responsible')); ?>" placeholder="Person Responsible"></div>
                             <div class="col-12"><button type="submit" class="btn btn-sm btn-sked"><i class="bi bi-plus-lg"></i>Add line item</button></div>
                         </form>
                     </details>

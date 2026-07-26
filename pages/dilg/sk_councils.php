@@ -69,7 +69,7 @@ $overview = sked_compliance_overview();
                 <?php if (empty($overview)): ?>
                     <div class="text-center text-secondary py-5"><i class="bi bi-diagram-3 fs-1 d-block mb-2"></i>No active SK accounts yet.</div>
                 <?php else: ?>
-                    <div class="table-responsive"><table class="table align-middle">
+                    <div class="table-responsive"><table class="table align-middle" id="skCouncilsTable">
                         <thead><tr><th>Barangay</th><th>SK Chairman</th><th>Compliance Strikes</th></tr></thead>
                         <tbody>
                         <?php foreach ($overview as $row): $strikes = (int) $row['strikes']; ?>
@@ -86,5 +86,9 @@ $overview = sked_compliance_overview();
         </main>
     </div>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="../../js/table-tools.js"></script>
+    <script>
+        new SkedTableTools('#skCouncilsTable', { pageSize: 15 });
+    </script>
 </body>
 </html>

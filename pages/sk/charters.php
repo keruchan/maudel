@@ -29,6 +29,7 @@ $displayName = !empty($_SESSION['name']) ? (string) $_SESSION['name'] : 'SK Chai
 $todayLabel = date('l, F j, Y');
 
 $flash = ['type' => '', 'msg' => ''];
+$formErrors = [];
 
 if (empty($_SESSION['csrf_charters_token'])) {
     $_SESSION['csrf_charters_token'] = bin2hex(random_bytes(32));
@@ -46,9 +47,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } else {
         $creator = ['id' => $skUserId, 'role' => $role, 'name' => $displayName, 'barangay_id' => $barangayId];
         $r = sked_create_charter($creator, $_POST);
-        $flash = $r['ok']
-            ? ['type' => 'success', 'msg' => 'Project "' . e((string) $_POST['title']) . '" added to the charter.']
-            : ['type' => 'danger', 'msg' => implode(' ', array_map('e', $r['errors']))];
+        if ($r['ok']) {
+            $flash = ['type' => 'success', 'msg' => 'Project "' . e((string) $_POST['title']) . '" added to the charter.'];
+        } else {
+            $formErrors = $r['errors'];
+            sked_form_retain(true); // don't make the SK retype the whole charter
+        }
     }
 }
 
@@ -112,36 +116,39 @@ $fmtMoney = static fn($amt) => $amt === null ? '—' : '₱' . number_format((fl
                         <div class="section-heading"><h2>New Project</h2></div>
                         <form method="post" action="charters.php" novalidate>
                             <input type="hidden" name="csrf_token" value="<?php echo e((string) $_SESSION['csrf_charters_token']); ?>">
+
+                            <?php sked_render_form_errors($formErrors, 'The project could not be added:'); ?>
+
                             <div class="mb-3">
                                 <label for="title" class="form-label">Project title</label>
-                                <input type="text" class="form-control" id="title" name="title" maxlength="160" required>
+                                <input type="text" class="form-control" id="title" name="title" maxlength="160" value="<?php echo e(sked_old('title')); ?>" required>
                             </div>
                             <div class="mb-3">
                                 <label for="description" class="form-label">Description</label>
-                                <textarea class="form-control" id="description" name="description" rows="2" maxlength="2000"></textarea>
+                                <textarea class="form-control" id="description" name="description" rows="2" maxlength="2000"><?php echo e(sked_old('description')); ?></textarea>
                             </div>
                             <div class="row g-2">
                                 <div class="col-6 mb-3">
                                     <label for="start_date" class="form-label">Start date</label>
-                                    <input type="date" class="form-control" id="start_date" name="start_date">
+                                    <input type="date" class="form-control" id="start_date" name="start_date" value="<?php echo e(sked_old('start_date')); ?>">
                                 </div>
                                 <div class="col-6 mb-3">
                                     <label for="end_date" class="form-label">End date</label>
-                                    <input type="date" class="form-control" id="end_date" name="end_date">
+                                    <input type="date" class="form-control" id="end_date" name="end_date" value="<?php echo e(sked_old('end_date')); ?>">
                                 </div>
                                 <div class="col-6 mb-3">
                                     <label for="budget_amount" class="form-label">Budget <span class="text-secondary fw-normal">(info only)</span></label>
                                     <div class="input-group">
                                         <span class="input-group-text">₱</span>
-                                        <input type="number" step="0.01" min="0" class="form-control" id="budget_amount" name="budget_amount" placeholder="0.00">
+                                        <input type="number" step="0.01" min="0" class="form-control" id="budget_amount" name="budget_amount" placeholder="0.00" value="<?php echo e(sked_old('budget_amount')); ?>">
                                     </div>
                                 </div>
                                 <div class="col-6 mb-3">
                                     <label for="status" class="form-label">Status</label>
                                     <select class="form-select" id="status" name="status">
-                                        <option value="upcoming">Upcoming</option>
-                                        <option value="ongoing">Current</option>
-                                        <option value="completed">Past</option>
+                                        <option value="upcoming" <?php echo sked_old_selected('status', 'upcoming', true) ? 'selected' : ''; ?>>Upcoming</option>
+                                        <option value="ongoing" <?php echo sked_old_selected('status', 'ongoing') ? 'selected' : ''; ?>>Current</option>
+                                        <option value="completed" <?php echo sked_old_selected('status', 'completed') ? 'selected' : ''; ?>>Past</option>
                                     </select>
                                 </div>
                             </div>
@@ -150,7 +157,7 @@ $fmtMoney = static fn($amt) => $amt === null ? '—' : '₱' . number_format((fl
                                 <select class="form-select" id="event_id" name="event_id">
                                     <option value="0">— None —</option>
                                     <?php foreach ($linkableEvents as $ev): ?>
-                                        <option value="<?php echo (int) $ev['id']; ?>"><?php echo e((string) $ev['title']); ?><?php echo $ev['event_date'] ? ' (' . e(date('M j, Y', strtotime((string) $ev['event_date']))) . ')' : ''; ?></option>
+                                        <option value="<?php echo (int) $ev['id']; ?>" <?php echo sked_old_selected('event_id', (string) $ev['id']) ? 'selected' : ''; ?>><?php echo e((string) $ev['title']); ?><?php echo $ev['event_date'] ? ' (' . e(date('M j, Y', strtotime((string) $ev['event_date']))) . ')' : ''; ?></option>
                                     <?php endforeach; ?>
                                 </select>
                             </div>

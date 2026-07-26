@@ -104,7 +104,7 @@ $actionLabel = static function (string $action): string {
                 <?php if (empty($entries)): ?>
                     <div class="text-center text-secondary py-5"><i class="bi bi-journal-text fs-1 d-block mb-2"></i>No audit entries match these filters.</div>
                 <?php else: ?>
-                    <div class="table-responsive"><table class="table table-sm align-middle">
+                    <div class="table-responsive"><table class="table table-sm align-middle" id="auditTable">
                         <thead><tr><th>When</th><th>Actor</th><th>Action</th><th>Entity</th><th>Details</th></tr></thead>
                         <tbody>
                         <?php foreach ($entries as $entry): ?>
@@ -135,5 +135,9 @@ $actionLabel = static function (string $action): string {
         </main>
     </div>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="../../js/table-tools.js"></script>
+    <script>
+        new SkedTableTools('#auditTable', { pageSize: 20, filters: [{ label: 'Action' }] });
+    </script>
 </body>
 </html>

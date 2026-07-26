@@ -107,6 +107,21 @@ function sked_render_analytics_body(array $bundle, array $distributions, array $
         'neutral'  => ['icon' => 'bi-emoji-neutral', 'label' => 'Mixed / Neutral'],
     ];
     $sentimentTone = $sentimentHeadlines[$sentiment['overall']] ?? $sentimentHeadlines['neutral'];
+
+    // Every scored entry, handed to the browser so the sentiment legend and the
+    // cloud words can filter the full list client-side (no re-query per click).
+    $voiceEntries = [];
+    foreach (($sentiment['entries'] ?? []) as $i => $entry) {
+        $voiceEntries[] = [
+            'i' => $i,
+            'text' => (string) $entry['text'],
+            'label' => (string) $entry['label'],
+            'score' => (float) $entry['score'],
+            'why' => (string) ($entry['why'] ?? ''),
+            'source' => sked_feedback_source_label((string) $entry['source']),
+            'date' => $entry['created_at'] ? date('M j, Y', strtotime((string) $entry['created_at'])) : '',
+        ];
+    }
     ?>
     <ul class="nav analytics-tabs mb-3" id="analyticsTabs" role="tablist">
         <li class="nav-item" role="presentation">
@@ -308,11 +323,13 @@ function sked_render_analytics_body(array $bundle, array $distributions, array $
                                 <?php if ($sentiment['pct']['neutral'] > 0): ?><div class="seg seg-neutral" style="width:<?php echo e((string) $sentiment['pct']['neutral']); ?>%;"><?php if ($sentiment['pct']['neutral'] >= 10) { echo e((string) $sentiment['pct']['neutral']) . '%'; } ?></div><?php endif; ?>
                                 <?php if ($sentiment['pct']['negative'] > 0): ?><div class="seg seg-negative" style="width:<?php echo e((string) $sentiment['pct']['negative']); ?>%;"><?php if ($sentiment['pct']['negative'] >= 10) { echo e((string) $sentiment['pct']['negative']) . '%'; } ?></div><?php endif; ?>
                             </div>
-                            <div class="sentiment-legend">
-                                <span class="lg-key"><span class="lg-dot positive"></span>Positive &middot; <?php echo e((string) $sentiment['pct']['positive']); ?>%</span>
-                                <span class="lg-key"><span class="lg-dot neutral"></span>Neutral &middot; <?php echo e((string) $sentiment['pct']['neutral']); ?>%</span>
-                                <span class="lg-key"><span class="lg-dot negative"></span>Negative &middot; <?php echo e((string) $sentiment['pct']['negative']); ?>%</span>
+                            <div class="sentiment-legend" id="sentimentLegend">
+                                <button type="button" class="lg-key is-active" data-sent-filter="all"><span class="lg-dot all"></span>All &middot; <?php echo (int) $sentiment['total']; ?></button>
+                                <button type="button" class="lg-key" data-sent-filter="positive"><span class="lg-dot positive"></span>Positive &middot; <?php echo e((string) $sentiment['pct']['positive']); ?>%</button>
+                                <button type="button" class="lg-key" data-sent-filter="neutral"><span class="lg-dot neutral"></span>Neutral &middot; <?php echo e((string) $sentiment['pct']['neutral']); ?>%</button>
+                                <button type="button" class="lg-key" data-sent-filter="negative"><span class="lg-dot negative"></span>Negative &middot; <?php echo e((string) $sentiment['pct']['negative']); ?>%</button>
                             </div>
+                            <p class="small text-secondary mt-2 mb-0"><i class="bi bi-hand-index me-1"></i>Click a tone above to read every comment scored that way.</p>
                         </section>
                     </div>
                 </div>
@@ -324,26 +341,33 @@ function sked_render_analytics_body(array $bundle, array $distributions, array $
                             <?php if (empty($cloudWords)): ?>
                                 <div class="word-cloud-empty">Not enough text yet to surface common words.</div>
                             <?php else: ?>
-                                <div class="word-cloud">
+                                <?php
+                                    $cloudTally = ['positive' => 0, 'neutral' => 0, 'negative' => 0];
+                                    foreach ($cloudWords as $w) { $cloudTally[$w['sentiment']]++; }
+                                ?>
+                                <div class="cloud-filters" id="cloudFilters" role="group" aria-label="Filter words by tone">
+                                    <button type="button" class="cf-chip is-active" data-word-filter="all"><span class="lg-dot all"></span>All words</button>
+                                    <button type="button" class="cf-chip" data-word-filter="positive"><span class="lg-dot positive"></span>Positive</button>
+                                    <button type="button" class="cf-chip" data-word-filter="neutral"><span class="lg-dot neutral"></span>Neutral</button>
+                                    <button type="button" class="cf-chip" data-word-filter="negative"><span class="lg-dot negative"></span>Negative</button>
+                                </div>
+
+                                <div class="word-cloud" id="wordCloud">
                                     <?php foreach ($cloudWords as $w): ?>
-                                        <span class="wc-word tier-<?php echo (int) $w['tier']; ?>" tabindex="0" title="<?php echo e((string) $w['word']); ?>: <?php echo (int) $w['count']; ?> mention<?php echo $w['count'] === 1 ? '' : 's'; ?> (<?php echo e((string) $w['pct']); ?>% of words)"><?php echo e((string) $w['word']); ?></span>
+                                        <button type="button"
+                                                class="wc-word tier-<?php echo (int) $w['tier']; ?> sent-<?php echo e((string) $w['sentiment']); ?>"
+                                                data-sentiment="<?php echo e((string) $w['sentiment']); ?>"
+                                                data-word="<?php echo e((string) $w['word']); ?>"
+                                                data-entries="<?php echo e(implode(',', $w['entries'])); ?>"
+                                                title="<?php echo e((string) $w['word']); ?> — <?php echo e((string) $w['sentiment']); ?> tone. Click to read these comments."><?php echo e((string) $w['word']); ?></button>
                                     <?php endforeach; ?>
                                 </div>
-                                <p class="small text-secondary mt-1 mb-3"><i class="bi bi-lightbulb me-1"></i>Bigger & darker = mentioned more often. Common connector words (ang, ng, sa, the, is, sana, po, …) are filtered out so only topical words show.</p>
-                                <div class="table-responsive">
-                                    <table class="table table-sm align-middle mb-0">
-                                        <thead><tr><th>Word</th><th class="text-end">Mentions</th><th class="text-end">Share of words</th></tr></thead>
-                                        <tbody>
-                                        <?php foreach ($cloudWords as $w): ?>
-                                            <tr>
-                                                <td class="fw-semibold"><?php echo e((string) $w['word']); ?></td>
-                                                <td class="text-end tabular"><?php echo (int) $w['count']; ?></td>
-                                                <td class="text-end tabular small text-secondary"><?php echo e((string) $w['pct']); ?>%</td>
-                                            </tr>
-                                        <?php endforeach; ?>
-                                        </tbody>
-                                    </table>
-                                </div>
+                                <div class="word-cloud-empty d-none" id="wordCloudEmpty">No words with that tone.</div>
+                                <p class="small text-secondary mt-2 mb-0">
+                                    <i class="bi bi-lightbulb me-1"></i>Bigger = mentioned more often; colour = the tone of the comments it appears in.
+                                    Filipino and English connector words (ang, ng, sa, the, is, po, sana, …) are filtered out so only topics show.
+                                    <strong>Click any word</strong> to read the comments it came from.
+                                </p>
                             <?php endif; ?>
                         </section>
                     </div>
@@ -351,22 +375,39 @@ function sked_render_analytics_body(array $bundle, array $distributions, array $
 
                 <div class="row g-3">
                     <div class="col-12">
-                        <section class="docket-panel">
-                            <div class="section-heading"><h2 class="h6 mb-0">Feedback spotlight</h2><span class="section-note">A spread of <?php echo count($recentFeedback); ?> quotes across sentiment</span></div>
+                        <section class="docket-panel" id="feedbackListPanel">
+                            <div class="section-heading">
+                                <h2 class="h6 mb-0" id="feedbackListTitle">Feedback spotlight</h2>
+                                <span class="section-note" id="feedbackListNote">A spread of <?php echo count($recentFeedback); ?> quotes across sentiment</span>
+                            </div>
+
+                            <div id="feedbackFilterBar" class="d-none align-items-center gap-2 mb-3">
+                                <span class="badge text-bg-primary" id="feedbackFilterLabel"></span>
+                                <button type="button" class="btn btn-sm btn-outline-secondary" id="feedbackFilterClear"><i class="bi bi-x-lg me-1"></i>Clear filter</button>
+                            </div>
+
                             <?php if (empty($recentFeedback)): ?>
                                 <p class="small text-secondary mb-0">Nothing to show yet.</p>
                             <?php else: ?>
-                                <?php foreach ($recentFeedback as $entry): ?>
-                                    <div class="feedback-item">
-                                        <div class="fi-meta">
-                                            <span class="sentiment-badge <?php echo e((string) $entry['label']); ?>"><?php echo e(ucfirst((string) $entry['label'])); ?></span>
-                                            <span><?php echo e(sked_feedback_source_label((string) $entry['source'])); ?></span>
-                                            <span>&middot;</span>
-                                            <span><?php echo e(date('M j, Y', strtotime((string) $entry['created_at']))); ?></span>
+                                <!-- Default view: the balanced spotlight sample. Replaced in place
+                                     by the full filtered list once a tone or word is clicked. -->
+                                <div id="feedbackDefaultList">
+                                    <?php foreach ($recentFeedback as $entry): ?>
+                                        <div class="feedback-item">
+                                            <div class="fi-meta">
+                                                <span class="sentiment-badge <?php echo e((string) $entry['label']); ?>"><?php echo e(ucfirst((string) $entry['label'])); ?></span>
+                                                <span><?php echo e(sked_feedback_source_label((string) $entry['source'])); ?></span>
+                                                <span>&middot;</span>
+                                                <span><?php echo e(date('M j, Y', strtotime((string) $entry['created_at']))); ?></span>
+                                            </div>
+                                            <div class="fi-text">&ldquo;<?php echo e((string) $entry['text']); ?>&rdquo;</div>
+                                            <?php if (!empty($entry['why'])): ?>
+                                                <div class="fi-why"><i class="bi bi-info-circle me-1"></i><?php echo e((string) $entry['why']); ?></div>
+                                            <?php endif; ?>
                                         </div>
-                                        <div class="fi-text">&ldquo;<?php echo e((string) $entry['text']); ?>&rdquo;</div>
-                                    </div>
-                                <?php endforeach; ?>
+                                    <?php endforeach; ?>
+                                </div>
+                                <div id="feedbackFilteredList" class="d-none"></div>
                             <?php endif; ?>
                         </section>
                     </div>
@@ -461,6 +502,127 @@ function sked_render_analytics_body(array $bundle, array $distributions, array $
             }
             Object.values(charts).forEach(c => { if (c && c.resize) c.resize(); });
         }
+
+        /* ---------- Voice of the Youth: clickable tone + word filters ----------
+           Every scored comment is already on the page, so filtering is instant
+           and needs no round trip. Clicking a tone in the legend, or any word in
+           the cloud, swaps the balanced spotlight for the full matching list. */
+        const VOICE = <?php echo json_encode($voiceEntries, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE); ?>;
+
+        (function () {
+            const legend = document.getElementById('sentimentLegend');
+            const cloud = document.getElementById('wordCloud');
+            const cloudFilters = document.getElementById('cloudFilters');
+            const defaultList = document.getElementById('feedbackDefaultList');
+            const filteredList = document.getElementById('feedbackFilteredList');
+            const filterBar = document.getElementById('feedbackFilterBar');
+            const filterLabel = document.getElementById('feedbackFilterLabel');
+            const filterClear = document.getElementById('feedbackFilterClear');
+            const listTitle = document.getElementById('feedbackListTitle');
+            const listNote = document.getElementById('feedbackListNote');
+            const panel = document.getElementById('feedbackListPanel');
+            if (!filteredList || !defaultList) { return; }
+
+            const esc = (s) => String(s).replace(/[&<>"']/g, c => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+            }[c]));
+
+            function cap(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
+
+            function renderEntries(entries) {
+                if (!entries.length) {
+                    filteredList.innerHTML = '<p class="small text-secondary mb-0">No comments match this filter.</p>';
+                    return;
+                }
+                filteredList.innerHTML = entries.map(function (e) {
+                    const why = e.why ? '<div class="fi-why"><i class="bi bi-info-circle me-1"></i>' + esc(e.why) + '</div>' : '';
+                    return '<div class="feedback-item">' +
+                        '<div class="fi-meta">' +
+                            '<span class="sentiment-badge ' + esc(e.label) + '">' + esc(cap(e.label)) + '</span>' +
+                            '<span>' + esc(e.source) + '</span><span>&middot;</span><span>' + esc(e.date) + '</span>' +
+                        '</div>' +
+                        '<div class="fi-text">&ldquo;' + esc(e.text) + '&rdquo;</div>' + why +
+                    '</div>';
+                }).join('');
+            }
+
+            function showFiltered(entries, labelHtml, noteText) {
+                renderEntries(entries);
+                defaultList.classList.add('d-none');
+                filteredList.classList.remove('d-none');
+                filterBar.classList.remove('d-none');
+                filterBar.classList.add('d-flex');
+                filterLabel.innerHTML = labelHtml;
+                listTitle.textContent = 'Matching comments';
+                listNote.textContent = noteText;
+                if (panel && panel.scrollIntoView) { panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }
+            }
+
+            function clearFilter() {
+                defaultList.classList.remove('d-none');
+                filteredList.classList.add('d-none');
+                filterBar.classList.add('d-none');
+                filterBar.classList.remove('d-flex');
+                listTitle.textContent = 'Feedback spotlight';
+                listNote.textContent = 'A spread of <?php echo count($recentFeedback); ?> quotes across sentiment';
+                if (legend) {
+                    legend.querySelectorAll('.lg-key').forEach(b => b.classList.toggle('is-active', b.dataset.sentFilter === 'all'));
+                }
+                if (cloud) { cloud.querySelectorAll('.wc-word').forEach(w => w.classList.remove('is-selected')); }
+            }
+
+            // --- Legend: filter comments by tone ---
+            if (legend) {
+                legend.addEventListener('click', function (ev) {
+                    const btn = ev.target.closest('.lg-key');
+                    if (!btn) { return; }
+                    const tone = btn.dataset.sentFilter;
+                    legend.querySelectorAll('.lg-key').forEach(b => b.classList.toggle('is-active', b === btn));
+                    if (cloud) { cloud.querySelectorAll('.wc-word').forEach(w => w.classList.remove('is-selected')); }
+
+                    if (tone === 'all') { clearFilter(); return; }
+                    const matched = VOICE.filter(e => e.label === tone);
+                    showFiltered(matched,
+                        '<span class="lg-dot ' + tone + ' me-1"></span>' + cap(tone) + ' comments',
+                        matched.length + ' of ' + VOICE.length + ' comments');
+                });
+            }
+
+            // --- Cloud chips: filter which words are visible by tone ---
+            if (cloudFilters && cloud) {
+                const cloudEmpty = document.getElementById('wordCloudEmpty');
+                cloudFilters.addEventListener('click', function (ev) {
+                    const chip = ev.target.closest('.cf-chip');
+                    if (!chip) { return; }
+                    const tone = chip.dataset.wordFilter;
+                    cloudFilters.querySelectorAll('.cf-chip').forEach(c => c.classList.toggle('is-active', c === chip));
+                    let shown = 0;
+                    cloud.querySelectorAll('.wc-word').forEach(function (w) {
+                        const match = tone === 'all' || w.dataset.sentiment === tone;
+                        w.classList.toggle('d-none', !match);
+                        if (match) { shown++; }
+                    });
+                    if (cloudEmpty) { cloudEmpty.classList.toggle('d-none', shown > 0); }
+                });
+            }
+
+            // --- Cloud word: show the comments that word came from ---
+            if (cloud) {
+                cloud.addEventListener('click', function (ev) {
+                    const w = ev.target.closest('.wc-word');
+                    if (!w) { return; }
+                    cloud.querySelectorAll('.wc-word').forEach(x => x.classList.toggle('is-selected', x === w));
+                    if (legend) { legend.querySelectorAll('.lg-key').forEach(b => b.classList.remove('is-active')); }
+                    const ids = (w.dataset.entries || '').split(',').filter(s => s !== '').map(Number);
+                    const matched = VOICE.filter(e => ids.indexOf(e.i) !== -1);
+                    showFiltered(matched,
+                        '<i class="bi bi-chat-quote me-1"></i>Mentions of &ldquo;' + esc(w.dataset.word) + '&rdquo;',
+                        matched.length + ' comment' + (matched.length === 1 ? '' : 's'));
+                });
+            }
+
+            if (filterClear) { filterClear.addEventListener('click', clearFilter); }
+        })();
 
         document.addEventListener('DOMContentLoaded', function () {
             initTab('descriptive');

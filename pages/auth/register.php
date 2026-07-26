@@ -33,7 +33,9 @@ $sex = '';
 $email = '';
 $mobile = '';
 $birthdate = '';
+$municipality = SKED_DEFAULT_MUNICIPALITY;
 $barangayId = 0;
+$purok = '';
 $username = '';
 $agreedTerms = false;
 
@@ -49,7 +51,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $email = trim((string) ($_POST['email'] ?? ''));
     $mobile = trim((string) ($_POST['mobile'] ?? ''));
     $birthdate = trim((string) ($_POST['birthdate'] ?? ''));
+    $municipality = trim((string) ($_POST['municipality'] ?? SKED_DEFAULT_MUNICIPALITY));
     $barangayId = (int) ($_POST['barangay_id'] ?? 0);
+    $purok = trim((string) ($_POST['purok'] ?? ''));
     $username = trim((string) ($_POST['username'] ?? ''));
     $password = (string) ($_POST['password'] ?? '');
     $confirmPassword = (string) ($_POST['confirm_password'] ?? '');
@@ -67,7 +71,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     if (empty($errors)) {
-        $result = sked_register_youth_user($surname, $givenName, $middleName, $sex, $email, $mobile, $birthdate, $barangayId, $username, $password, $confirmPassword);
+        $result = sked_register_youth_user($surname, $givenName, $middleName, $sex, $email, $mobile, $birthdate, $barangayId, $username, $password, $confirmPassword, $municipality, $purok);
 
         if ($result['ok']) {
             unset($_SESSION['csrf_register_token']);
@@ -95,7 +99,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     <link rel="stylesheet" href="auth.css">
 </head>
-<body>
+<body class="register-auth-page">
     <main class="auth-shell auth-shell-wide">
         <section class="auth-pane auth-pane-brief">
             <div class="pane-grid" aria-hidden="true"></div>
@@ -240,14 +244,63 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         </div>
                         <div class="col-md-6">
                             <div class="field-group">
+                                <label for="region_display" class="form-label">Region</label>
+                                <div class="input-affix">
+                                    <i class="bi bi-map"></i>
+                                    <select class="form-select" id="region_display" disabled>
+                                        <option selected><?php echo e(SKED_REGION_NAME); ?></option>
+                                    </select>
+                                </div>
+                                <input type="hidden" name="region" value="<?php echo e(SKED_REGION_NAME); ?>">
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="field-group">
+                                <label for="province_display" class="form-label">Province</label>
+                                <div class="input-affix">
+                                    <i class="bi bi-map"></i>
+                                    <select class="form-select" id="province_display" disabled>
+                                        <option selected><?php echo e(SKED_PROVINCE_NAME); ?></option>
+                                    </select>
+                                </div>
+                                <input type="hidden" name="province" value="<?php echo e(SKED_PROVINCE_NAME); ?>">
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="field-group">
+                                <label for="municipality_display" class="form-label">Municipality</label>
+                                <div class="input-affix">
+                                    <i class="bi bi-building"></i>
+                                    <select class="form-select" id="municipality_display" disabled>
+                                        <?php sked_render_municipality_options($municipality); ?>
+                                    </select>
+                                </div>
+                                <input type="hidden" name="municipality" value="<?php echo e(SKED_DEFAULT_MUNICIPALITY); ?>">
+                                <small class="text-secondary">SKed registration is currently scoped to Siniloan, Laguna.</small>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="field-group">
                                 <label for="barangay_id" class="form-label">Barangay</label>
                                 <div class="input-affix">
                                     <i class="bi bi-geo-alt"></i>
                                     <select class="form-select" id="barangay_id" name="barangay_id" required>
-                                        <?php sked_render_barangay_options($barangayId > 0 ? $barangayId : null, 'Select your barangay…'); ?>
+                                        <?php sked_render_barangay_options($barangayId > 0 ? $barangayId : null, 'Select your barangay...'); ?>
                                     </select>
                                 </div>
                                 <small class="text-secondary">Siniloan, Laguna. Your SK Chairman here verifies your account.</small>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="field-group">
+                                <label for="purok" class="form-label">Purok</label>
+                                <div class="input-affix">
+                                    <i class="bi bi-signpost"></i>
+                                    <select class="form-select" id="purok" name="purok" required>
+                                        <?php sked_render_purok_options($purok); ?>
+                                    </select>
+                                </div>
+                                <small class="text-secondary">Your SK Chairman uses this for resident verification.</small>
                             </div>
                         </div>
                         <div class="col-md-6">

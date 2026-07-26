@@ -59,7 +59,7 @@ function sked_demo_users(): array
             'role' => 'youth', 'name' => 'Juan dela Cruz', 'barangay_id' => 1,
             'surname' => 'Dela Cruz', 'given_name' => 'Juan', 'middle_name' => 'Reyes',
             'sex_assigned_at_birth' => 'male', 'email' => 'juan.delacruz@demo.sked',
-            'mobile' => '0912-345-6789', 'birthdate' => '2003-05-14',
+            'mobile' => '0912-345-6789', 'birthdate' => '2003-05-14', 'purok' => 'Purok 1',
         ],
     ];
 }
@@ -71,7 +71,7 @@ function sked_demo_users(): array
  * governed the same way as pages/account/settings.php's read-only fields.
  * Returns null only if the user id can't be resolved at all.
  *
- * @return array{name:string,surname:?string,given_name:?string,middle_name:?string,sex_assigned_at_birth:?string,email:?string,mobile:?string,birthdate:?string,barangay_id:?int}|null
+ * @return array{name:string,surname:?string,given_name:?string,middle_name:?string,sex_assigned_at_birth:?string,email:?string,mobile:?string,birthdate:?string,barangay_id:?int,purok:?string}|null
  */
 function sked_user_identity(int $userId): ?array
 {
@@ -90,6 +90,7 @@ function sked_user_identity(int $userId): ?array
             'mobile' => $demo['mobile'] ?? null,
             'birthdate' => $demo['birthdate'] ?? null,
             'barangay_id' => $demo['barangay_id'] ?? null,
+            'purok' => $demo['purok'] ?? null,
         ];
     }
 
@@ -107,6 +108,7 @@ function sked_user_identity(int $userId): ?array
         'mobile' => $u['mobile'] ?? null,
         'birthdate' => $u['birthdate'] ?? null,
         'barangay_id' => $u['barangay_id'] !== null ? (int) $u['barangay_id'] : null,
+        'purok' => $u['purok'] ?? null,
     ];
 }
 
@@ -145,7 +147,7 @@ function sked_find_registered_user(string $identifier): ?array
     // twice in a statement — hence two distinct params bound to the same
     // value rather than a single :identifier used on both sides of the OR.
     $stmt = sked_db()->prepare(
-        'SELECT id, role, status, barangay_id, name, surname, given_name, middle_name, sex_assigned_at_birth,
+        'SELECT id, role, status, barangay_id, purok, name, surname, given_name, middle_name, sex_assigned_at_birth,
                 email, mobile, birthdate, username, password_hash, verified, former_role_badge, created_at
          FROM users
          WHERE LOWER(username) = LOWER(:username) OR LOWER(email) = LOWER(:email)
@@ -164,7 +166,7 @@ function sked_find_user_by_id(int $userId): ?array
         return null;
     }
     $stmt = sked_db()->prepare(
-        'SELECT id, role, status, barangay_id, name, surname, given_name, middle_name, sex_assigned_at_birth,
+        'SELECT id, role, status, barangay_id, purok, name, surname, given_name, middle_name, sex_assigned_at_birth,
                 email, mobile, birthdate, username, password_hash, verified, former_role_badge, created_at
          FROM users WHERE id = :id LIMIT 1'
     );
@@ -186,7 +188,7 @@ function sked_find_user_by_id(int $userId): ?array
  *
  * @return array{ok:bool,errors:array<int,string>,user?:array}
  */
-function sked_register_youth_user(string $surname, string $givenName, string $middleName, string $sex, string $email, string $mobile, string $birthdate, int $barangayId, string $username, string $password, string $confirmPassword): array
+function sked_register_youth_user(string $surname, string $givenName, string $middleName, string $sex, string $email, string $mobile, string $birthdate, int $barangayId, string $username, string $password, string $confirmPassword, string $municipality = SKED_DEFAULT_MUNICIPALITY, string $purok = ''): array
 {
     $errors = [];
 
@@ -200,6 +202,8 @@ function sked_register_youth_user(string $surname, string $givenName, string $mi
     $email = trim($email);
     $mobile = trim($mobile);
     $birthdate = trim($birthdate);
+    $municipality = trim($municipality);
+    $purok = trim($purok);
     $username = trim($username);
 
     if ($surname === '') {
@@ -220,8 +224,16 @@ function sked_register_youth_user(string $surname, string $givenName, string $mi
         $errors[] = 'A valid contact number is required.';
     }
 
-    if ($barangayId <= 0 || !sked_barangay_exists($barangayId)) {
+    if ($municipality !== SKED_DEFAULT_MUNICIPALITY || !sked_laguna_municipality_exists($municipality)) {
+        $errors[] = 'Please select a valid municipality.';
+    }
+
+    if ($barangayId <= 0 || !sked_barangay_in_scope($barangayId, $municipality)) {
         $errors[] = 'Please select your barangay.';
+    }
+
+    if ($purok === '' || !in_array($purok, sked_purok_options(), true)) {
+        $errors[] = 'Please select your purok.';
     }
 
     $age = $birthdate === '' ? null : sked_age_from_birthdate($birthdate);
@@ -260,13 +272,14 @@ function sked_register_youth_user(string $surname, string $givenName, string $mi
 
     try {
         $stmt = sked_db()->prepare(
-            'INSERT INTO users (role, status, barangay_id, name, surname, given_name, middle_name,
+            'INSERT INTO users (role, status, barangay_id, purok, name, surname, given_name, middle_name,
                 sex_assigned_at_birth, email, mobile, birthdate, username, password_hash, verified)
-             VALUES (\'youth\', \'pending\', :barangay_id, :name, :surname, :given_name, :middle_name,
+             VALUES (\'youth\', \'pending\', :barangay_id, :purok, :name, :surname, :given_name, :middle_name,
                 :sex, :email, :mobile, :birthdate, :username, :password_hash, 0)'
         );
         $stmt->execute([
             'barangay_id' => $barangayId,
+            'purok' => $purok,
             'name' => $fullName,
             'surname' => $surname,
             'given_name' => $givenName,
@@ -316,6 +329,7 @@ function sked_registered_login(string $identifier, string $password): bool
     $_SESSION['role'] = $user['role'];
     $_SESSION['status'] = (string) $user['status'];
     $_SESSION['barangay_id'] = $user['barangay_id'] !== null ? (int) $user['barangay_id'] : null;
+    $_SESSION['purok'] = $user['purok'] ?? null;
     $_SESSION['verified'] = (bool) $user['verified'];
     if (empty($_SESSION['csrf_logout_token'])) {
         $_SESSION['csrf_logout_token'] = bin2hex(random_bytes(32));
@@ -454,6 +468,7 @@ function sked_demo_login(string $username): bool
     // they are always treated as active + verified (see sked_is_verified()).
     $_SESSION['status'] = 'active';
     $_SESSION['barangay_id'] = $users[$username]['barangay_id'] ?? null;
+    $_SESSION['purok'] = $users[$username]['purok'] ?? null;
     $_SESSION['verified'] = true;
     if (empty($_SESSION['csrf_logout_token'])) {
         $_SESSION['csrf_logout_token'] = bin2hex(random_bytes(32));
@@ -542,6 +557,7 @@ function sked_clear_session(): void
         $_SESSION['role'],
         $_SESSION['status'],
         $_SESSION['barangay_id'],
+        $_SESSION['purok'],
         $_SESSION['mobile'],
         $_SESSION['verified'],
         $_SESSION['csrf_logout_token'],

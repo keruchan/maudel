@@ -17,8 +17,10 @@ require_once __DIR__ . '/../../includes/events.php';
 require_once __DIR__ . '/../../includes/analytics.php';
 require_once __DIR__ . '/../../includes/compliance.php';
 require_once __DIR__ . '/../../includes/profiling.php';
-require_once __DIR__ . '/../../includes/sk_members.php';
 require_once __DIR__ . '/../../includes/reports.php';
+require_once __DIR__ . '/../../includes/turnover.php';
+require_once __DIR__ . '/../../includes/cbydp.php';
+require_once __DIR__ . '/../../includes/abyip.php';
 
 require_role('ppsk');
 
@@ -27,14 +29,19 @@ $userId = (int) $_SESSION['id'];
 $displayName = !empty($_SESSION['name']) ? (string) $_SESSION['name'] : 'Pederasyon President';
 $todayLabel = date('l, F j, Y');
 $fedEvents = sked_events_for_manager('ppsk', $userId, null);
-$upcomingCount = count(array_filter($fedEvents, static fn($e) => in_array($e['status'], ['published', 'confirmed', 'ongoing'], true)));
+$ongoingCount = count(array_filter($fedEvents, static fn($e) => sked_event_time_bucket($e) === 'ongoing'));
+$upcomingCount = count(array_filter($fedEvents, static fn($e) => sked_event_time_bucket($e) === 'upcoming'));
 $topRecommendations = sked_recommend_categories(null, 3);
 $totalBarangays = count(sked_barangays());
 $activeSkCouncils = count(sked_compliance_overview());
-$totalOfficials = sked_sk_officials_count();
 $youthSummary = sked_youth_profile_summary();
 $totalYouth = array_sum(array_column($youthSummary, 'total_youth'));
 $pendingChairpersonReports = count(sked_reports_for_role('ppsk', ['type' => 'monthly', 'status' => 'submitted']));
+$pendingRosterCount = count(sked_pending_roster_rows());
+$totalPlansCount = count(sked_cbydp_list_all()) + count(sked_abyip_list_all());
+$topRecommendation = sked_recommend_categories(null, 1);
+$topFocusCategory = $topRecommendation[0]['category'] ?? null;
+$skWithStrikesCount = count(array_filter(sked_compliance_overview(), static fn ($r) => (int) $r['strikes'] > 0));
 ?>
 <!doctype html>
 <html lang="en">
@@ -84,86 +91,87 @@ $pendingChairpersonReports = count(sked_reports_for_role('ppsk', ['type' => 'mon
                 </svg>
             </section>
 
-            <section class="row g-3 mb-5" aria-label="PPSK dashboard metrics">
-                <div class="col-sm-6 col-xl-3">
-                    <div class="ledger-card stagger-1">
-                        <div class="d-flex justify-content-between align-items-start">
-                            <span class="ledger-icon"><i class="bi bi-diagram-3"></i></span>
-                            <span class="ledger-tag">Councils</span>
-                        </div>
-                        <div class="ledger-value tabular"><?php echo (int) $activeSkCouncils; ?>/<?php echo (int) $totalBarangays; ?></div>
-                        <div class="ledger-caption">Active barangay SK councils</div>
-                    </div>
-                </div>
-                <div class="col-sm-6 col-xl-3">
-                    <div class="ledger-card accent-teal stagger-2">
-                        <div class="d-flex justify-content-between align-items-start">
-                            <span class="ledger-icon"><i class="bi bi-person-badge"></i></span>
-                            <span class="ledger-tag">Officials</span>
-                        </div>
-                        <div class="ledger-value tabular"><?php echo (int) $totalOfficials; ?></div>
-                        <div class="ledger-caption">Recognized SK officials</div>
-                    </div>
-                </div>
-                <div class="col-sm-6 col-xl-3">
-                    <div class="ledger-card accent-amber stagger-3">
-                        <div class="d-flex justify-content-between align-items-start">
-                            <span class="ledger-icon"><i class="bi bi-calendar-event"></i></span>
-                            <span class="ledger-tag">Events</span>
-                        </div>
-                        <div class="ledger-value tabular"><?php echo $upcomingCount; ?></div>
-                        <div class="ledger-caption">Federation events</div>
-                    </div>
-                </div>
-                <div class="col-sm-6 col-xl-3">
-                    <div class="ledger-card accent-rust stagger-4">
-                        <div class="d-flex justify-content-between align-items-start">
-                            <span class="ledger-icon"><i class="bi bi-people"></i></span>
-                            <span class="ledger-tag">Registry</span>
-                        </div>
-                        <div class="ledger-value tabular"><?php echo number_format($totalYouth); ?></div>
-                        <div class="ledger-caption">Consolidated youth profiles</div>
-                    </div>
-                </div>
-            </section>
-
-            <section class="mb-5" aria-label="PPSK federation modules">
-                <div class="section-heading">
-                    <h2>Federation Modules</h2>
-                    <span class="section-note">4 modules available</span>
-                </div>
+            <section class="mb-5" aria-label="PPSK dashboard data links">
                 <div class="row g-3">
                     <div class="col-md-6 col-xl-3">
-                        <div class="registry-card">
-                            <span class="registry-icon"><i class="bi bi-diagram-3"></i></span>
-                            <h3>Barangay SK Councils</h3>
-                            <p>Status and youth data for every barangay SK council.</p>
-                            <a class="link-open" href="dashboard.php">Open module <i class="bi bi-arrow-right"></i></a>
-                        </div>
+                        <a class="ledger-card stagger-1 text-reset text-decoration-none d-block" href="compliance.php">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <span class="ledger-icon"><i class="bi bi-diagram-3"></i></span>
+                                <span class="ledger-tag">Councils</span>
+                            </div>
+                            <div class="ledger-value tabular"><?php echo (int) $activeSkCouncils; ?>/<?php echo (int) $totalBarangays; ?></div>
+                            <div class="ledger-caption">Active barangay SK councils</div>
+                        </a>
                     </div>
                     <div class="col-md-6 col-xl-3">
-                        <div class="registry-card tone-teal">
-                            <span class="registry-icon"><i class="bi bi-calendar-event"></i></span>
-                            <h3>Federation Events</h3>
-                            <p>City/municipal-wide events and joint youth programs.</p>
-                            <a class="link-open" href="events.php">Open module <i class="bi bi-arrow-right"></i></a>
-                        </div>
+                        <a class="ledger-card accent-rust stagger-2 text-reset text-decoration-none d-block" href="../manage/youth_profiles.php">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <span class="ledger-icon"><i class="bi bi-people"></i></span>
+                                <span class="ledger-tag">Registry</span>
+                            </div>
+                            <div class="ledger-value tabular"><?php echo number_format($totalYouth); ?></div>
+                            <div class="ledger-caption">Consolidated Profiles</div>
+                        </a>
                     </div>
                     <div class="col-md-6 col-xl-3">
-                        <div class="registry-card tone-amber">
-                            <span class="registry-icon"><i class="bi bi-people"></i></span>
-                            <h3>Consolidated Profiles</h3>
-                            <p>Aggregated Katipunan ng Kabataan registry across barangays.</p>
-                            <a class="link-open" href="dashboard.php">Open module <i class="bi bi-arrow-right"></i></a>
-                        </div>
+                        <a class="ledger-card accent-teal stagger-3 text-reset text-decoration-none d-block" href="events.php">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <span class="ledger-icon"><i class="bi bi-calendar-event"></i></span>
+                                <span class="ledger-tag">Ongoing</span>
+                            </div>
+                            <div class="ledger-value tabular"><?php echo (int) $ongoingCount; ?></div>
+                            <div class="ledger-caption">Ongoing Federation Events</div>
+                        </a>
                     </div>
                     <div class="col-md-6 col-xl-3">
-                        <div class="registry-card tone-rust">
-                            <span class="registry-icon"><i class="bi bi-file-earmark-bar-graph"></i></span>
-                            <h3>Reports</h3>
-                            <p>Participation and program reports for the federation.</p>
-                            <a class="link-open" href="dashboard.php">Open module <i class="bi bi-arrow-right"></i></a>
-                        </div>
+                        <a class="ledger-card accent-amber stagger-4 text-reset text-decoration-none d-block" href="plans.php">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <span class="ledger-icon"><i class="bi bi-clipboard-data"></i></span>
+                                <span class="ledger-tag">Plans</span>
+                            </div>
+                            <div class="ledger-value tabular"><?php echo (int) $totalPlansCount; ?></div>
+                            <div class="ledger-caption">Youth Development Plans</div>
+                        </a>
+                    </div>
+                    <div class="col-md-6 col-xl-3">
+                        <a class="ledger-card accent-rust text-reset text-decoration-none d-block" href="analytics.php">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <span class="ledger-icon"><i class="bi bi-bar-chart-line"></i></span>
+                                <span class="ledger-tag">Insight</span>
+                            </div>
+                            <div class="ledger-value" style="font-size:1.1rem;"><?php echo e($topFocusCategory ?? '—'); ?></div>
+                            <div class="ledger-caption">Recommended Focus Areas</div>
+                        </a>
+                    </div>
+                    <div class="col-md-6 col-xl-3">
+                        <a class="ledger-card text-reset text-decoration-none d-block" href="reports.php">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <span class="ledger-icon"><i class="bi bi-file-earmark-bar-graph"></i></span>
+                                <span class="ledger-tag">Pending</span>
+                            </div>
+                            <div class="ledger-value tabular"><?php echo (int) $pendingChairpersonReports; ?></div>
+                            <div class="ledger-caption">Reports awaiting review</div>
+                        </a>
+                    </div>
+                    <div class="col-md-6 col-xl-3">
+                        <a class="ledger-card accent-teal text-reset text-decoration-none d-block" href="compliance.php">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <span class="ledger-icon"><i class="bi bi-shield-exclamation"></i></span>
+                                <span class="ledger-tag">Flagged</span>
+                            </div>
+                            <div class="ledger-value tabular"><?php echo (int) $skWithStrikesCount; ?></div>
+                            <div class="ledger-caption">SK Compliance</div>
+                        </a>
+                    </div>
+                    <div class="col-md-6 col-xl-3">
+                        <a class="ledger-card accent-amber text-reset text-decoration-none d-block" href="turnover.php">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <span class="ledger-icon"><i class="bi bi-arrow-left-right"></i></span>
+                                <span class="ledger-tag">Vacancies</span>
+                            </div>
+                            <div class="ledger-value tabular"><?php echo (int) $pendingRosterCount; ?></div>
+                            <div class="ledger-caption">Turnover of Power</div>
+                        </a>
                     </div>
                 </div>
             </section>
@@ -234,14 +242,14 @@ $pendingChairpersonReports = count(sked_reports_for_role('ppsk', ['type' => 'mon
                     <div class="row g-3">
                         <?php foreach ($topRecommendations as $r): ?>
                         <div class="col-md-4">
-                            <div class="ledger-card">
+                            <a class="ledger-card text-reset text-decoration-none d-block" href="analytics.php">
                                 <div class="d-flex justify-content-between align-items-start">
                                     <span class="ledger-icon"><i class="bi bi-graph-up-arrow"></i></span>
                                     <span class="ledger-tag tabular"><?php echo $r['score']; ?>/100</span>
                                 </div>
                                 <div class="ledger-value" style="font-size:1.1rem;"><?php echo e($r['category']); ?></div>
                                 <div class="ledger-caption"><?php echo e(sked_explain_recommendation($r)); ?></div>
-                            </div>
+                            </a>
                         </div>
                         <?php endforeach; ?>
                     </div>

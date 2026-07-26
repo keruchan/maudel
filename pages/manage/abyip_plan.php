@@ -30,6 +30,9 @@ $linkBase = '../' . $role . '/';
 $todayLabel = date('l, F j, Y');
 
 $planId = (int) ($_GET['id'] ?? $_POST['plan_id'] ?? 0);
+// Keep whatever was typed when a submission failed, so nothing is retyped.
+sked_form_retain(($flash['type'] ?? '') === 'danger');
+
 $plan = sked_abyip_get($planId);
 if ($plan === null) {
     header('Location: ' . ($role === 'sk' ? 'abyip.php' : 'dashboard.php'));
@@ -228,15 +231,15 @@ $totals = sked_abyip_total_budget($plan);
                             <input type="hidden" name="csrf_token" value="<?php echo e((string) $_SESSION['csrf_abyipplan_token']); ?>">
                             <input type="hidden" name="action" value="add_item">
                             <input type="hidden" name="section_id" value="<?php echo (int) $section['id']; ?>">
-                            <div class="col-md-2"><input type="text" name="reference_code" class="form-control form-control-sm" placeholder="Ref. Code"></div>
-                            <div class="col-md-5"><input type="text" name="ppa_name" class="form-control form-control-sm" placeholder="PPA's *" required></div>
-                            <div class="col-md-5"><input type="text" name="description" class="form-control form-control-sm" placeholder="Description"></div>
-                            <div class="col-md-4"><input type="text" name="expected_result" class="form-control form-control-sm" placeholder="Expected Result"></div>
-                            <div class="col-md-4"><input type="text" name="performance_indicator" class="form-control form-control-sm" placeholder="Performance Indicator"></div>
+                            <div class="col-md-2"><input type="text" name="reference_code" class="form-control form-control-sm" value="<?php echo e(sked_old('reference_code')); ?>" placeholder="Ref. Code"></div>
+                            <div class="col-md-5"><input type="text" name="ppa_name" class="form-control form-control-sm" value="<?php echo e(sked_old('ppa_name')); ?>" placeholder="PPA's *" required></div>
+                            <div class="col-md-5"><input type="text" name="description" class="form-control form-control-sm" value="<?php echo e(sked_old('description')); ?>" placeholder="Description"></div>
+                            <div class="col-md-4"><input type="text" name="expected_result" class="form-control form-control-sm" value="<?php echo e(sked_old('expected_result')); ?>" placeholder="Expected Result"></div>
+                            <div class="col-md-4"><input type="text" name="performance_indicator" class="form-control form-control-sm" value="<?php echo e(sked_old('performance_indicator')); ?>" placeholder="Performance Indicator"></div>
                             <div class="col-md-4"><input type="text" name="period_of_implementation" class="form-control form-control-sm" placeholder="Period of Implementation"></div>
-                            <div class="col-md-3"><input type="number" step="0.01" min="0" name="budget_mooe" class="form-control form-control-sm" placeholder="MOOE"></div>
-                            <div class="col-md-3"><input type="number" step="0.01" min="0" name="budget_co" class="form-control form-control-sm" placeholder="CO"></div>
-                            <div class="col-md-6"><input type="text" name="person_responsible" class="form-control form-control-sm" placeholder="Person Responsible"></div>
+                            <div class="col-md-3"><input type="number" step="0.01" min="0" name="budget_mooe" class="form-control form-control-sm" value="<?php echo e(sked_old('budget_mooe')); ?>" placeholder="MOOE"></div>
+                            <div class="col-md-3"><input type="number" step="0.01" min="0" name="budget_co" class="form-control form-control-sm" value="<?php echo e(sked_old('budget_co')); ?>" placeholder="CO"></div>
+                            <div class="col-md-6"><input type="text" name="person_responsible" class="form-control form-control-sm" value="<?php echo e(sked_old('person_responsible')); ?>" placeholder="Person Responsible"></div>
                             <div class="col-12"><button type="submit" class="btn btn-sm btn-sked"><i class="bi bi-plus-lg"></i>Add line item</button></div>
                         </form>
                     </details>

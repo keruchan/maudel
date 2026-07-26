@@ -81,6 +81,7 @@ $acctEmail = $account['email'] ?? (string) ($_SESSION['username'] ?? '');
 $acctMobile = $account['mobile'] ?? '';
 $acctBarangay = isset($account['barangay_id']) && $account['barangay_id'] !== null
     ? sked_barangay_name((int) $account['barangay_id']) : '';
+$acctPurok = trim((string) ($account['purok'] ?? ''));
 $acctStatus = $account['status'] ?? (string) ($_SESSION['status'] ?? 'active');
 $officialBadge = (!$isDemo && $role === 'youth') ? sked_sk_official_badge_for_user($userId) : null;
 ?>
@@ -168,13 +169,31 @@ $officialBadge = (!$isDemo && $role === 'youth') ? sked_sk_official_badge_for_us
                         <?php endif; ?>
                         <?php if ($acctBarangay !== ''): ?>
                         <div class="snapshot-row">
+                            <span class="text-secondary">Region</span>
+                            <span><?php echo e(SKED_REGION_NAME); ?></span>
+                        </div>
+                        <div class="snapshot-row">
+                            <span class="text-secondary">Province</span>
+                            <span><?php echo e(SKED_PROVINCE_NAME); ?></span>
+                        </div>
+                        <div class="snapshot-row">
+                            <span class="text-secondary">Municipality</span>
+                            <span><?php echo e(SKED_DEFAULT_MUNICIPALITY); ?></span>
+                        </div>
+                        <div class="snapshot-row">
                             <span class="text-secondary">Barangay</span>
                             <span><?php echo e($acctBarangay); ?></span>
                         </div>
+                        <?php if ($acctPurok !== ''): ?>
+                        <div class="snapshot-row">
+                            <span class="text-secondary">Purok</span>
+                            <span><?php echo e($acctPurok); ?></span>
+                        </div>
+                        <?php endif; ?>
                         <?php endif; ?>
                         <p class="text-secondary small mt-3 mb-0">
                             <i class="bi bi-shield-lock me-1"></i>
-                            Name, email, role, and barangay are managed by your SK/DILG to keep records accurate.
+                            Name, email, role, and address are managed by your SK/DILG to keep records accurate.
                         </p>
                     </div>
                 </div>

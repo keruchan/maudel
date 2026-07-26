@@ -27,6 +27,7 @@ $displayName = !empty($_SESSION['name']) ? (string) $_SESSION['name'] : 'SK Chai
 $todayLabel = date('l, F j, Y');
 
 $flash = ['type' => '', 'msg' => ''];
+$formErrors = [];
 
 if (empty($_SESSION['csrf_reports_token'])) {
     $_SESSION['csrf_reports_token'] = bin2hex(random_bytes(32));
@@ -35,17 +36,21 @@ if (empty($_SESSION['csrf_reports_token'])) {
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $token = (string) ($_POST['csrf_token'] ?? '');
     if (!hash_equals((string) $_SESSION['csrf_reports_token'], $token)) {
-        $flash = ['type' => 'danger', 'msg' => 'Security validation failed. Please try again.'];
+        $formErrors = ['Security validation failed. Please try again.'];
     } elseif ($barangayId <= 0) {
         $flash = ['type' => 'danger', 'msg' => 'Your account is not assigned to a barangay.'];
     } else {
         $creator = ['id' => $skUserId, 'role' => $role, 'name' => $displayName, 'barangay_id' => $barangayId];
         $r = sked_submit_report($creator, 'monthly', (string) ($_POST['title'] ?? ''), (string) ($_POST['content'] ?? ''), (string) ($_POST['period_month'] ?? ''), null, $_FILES['attachment'] ?? null);
-        $flash = $r['ok']
-            ? ['type' => 'success', 'msg' => 'Monthly report submitted to your PPSK.']
-            : ['type' => 'danger', 'msg' => implode(' ', array_map('e', $r['errors']))];
+        if ($r['ok']) {
+            $flash = ['type' => 'success', 'msg' => 'Monthly report submitted to your PPSK.'];
+        } else {
+            $formErrors = $r['errors'];
+        }
     }
 }
+
+sked_form_retain(!empty($formErrors));
 
 $history = $barangayId > 0 ? sked_monthly_reports_for_barangay($barangayId) : [];
 $strikeCount = sked_strike_count($skUserId);
@@ -152,26 +157,27 @@ for ($i = 0; $i < 12; $i++) {
                         <div class="section-heading"><h2>Submit Report</h2></div>
                         <form method="post" action="reports.php" enctype="multipart/form-data" novalidate>
                             <input type="hidden" name="csrf_token" value="<?php echo e((string) $_SESSION['csrf_reports_token']); ?>">
+                            <?php sked_render_form_errors($formErrors, 'The report could not be submitted:'); ?>
                             <div class="mb-3">
                                 <label for="period_month" class="form-label">Reporting month</label>
                                 <select class="form-select" id="period_month" name="period_month" required>
                                     <?php foreach ($periodOptions as $val => $label): ?>
-                                        <option value="<?php echo e($val); ?>" <?php echo $val === $duePeriod ? 'selected' : ''; ?>><?php echo e($label); ?></option>
+                                        <option value="<?php echo e($val); ?>" <?php echo sked_old_selected('period_month', $val, $val === $duePeriod) ? 'selected' : ''; ?>><?php echo e($label); ?></option>
                                     <?php endforeach; ?>
                                 </select>
                             </div>
                             <div class="mb-3">
                                 <label for="title" class="form-label">Report title</label>
-                                <input type="text" class="form-control" id="title" name="title" maxlength="160" placeholder="e.g. Monthly Activity Report" required>
+                                <input type="text" class="form-control" id="title" name="title" maxlength="160" placeholder="e.g. Monthly Activity Report" value="<?php echo e(sked_old('title')); ?>" required>
                             </div>
                             <div class="mb-3">
                                 <label for="content" class="form-label">Summary</label>
-                                <textarea class="form-control" id="content" name="content" rows="5" maxlength="4000" placeholder="Activities, events held, profiling progress, concerns…"></textarea>
+                                <textarea class="form-control" id="content" name="content" rows="5" maxlength="4000" placeholder="Activities, events held, profiling progress, concerns…"><?php echo e(sked_old('content')); ?></textarea>
                             </div>
                             <div class="mb-3">
                                 <label for="attachment" class="form-label">Attachment</label>
                                 <input type="file" class="form-control" id="attachment" name="attachment" accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png">
-                                <div class="form-text">PDF, Word, Excel, JPG, or PNG. Max 10 MB.</div>
+                                <div class="form-text">PDF, Word, Excel, JPG, or PNG. Max 10 MB. <?php if (!empty($formErrors)): ?><span class="text-warning-emphasis">A previously chosen file must be picked again because browsers never resend file inputs.</span><?php endif; ?></div>
                             </div>
                             <button type="submit" class="btn btn-sked w-100"><i class="bi bi-send-check me-1"></i> Submit to PPSK</button>
                         </form>

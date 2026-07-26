@@ -31,10 +31,6 @@ $ongoingEvents = array_values(array_filter($events, static fn ($e) => sked_event
 $pastEvents = array_values(array_filter($events, static fn ($e) => sked_event_time_bucket($e) === 'past'));
 $upcomingEvents = array_values(array_filter($events, static fn ($e) => sked_event_time_bucket($e) === 'upcoming'));
 
-$statusBadge = static function (string $s): string {
-    $map = ['draft' => 'secondary', 'published' => 'primary', 'confirmed' => 'info', 'ongoing' => 'info', 'completed' => 'success', 'cancelled' => 'danger', 'evaluation' => 'warning', 'closed' => 'dark'];
-    return $map[$s] ?? 'secondary';
-};
 $scopeLabel = static function (array $ev) {
     if ($ev['scope'] === 'barangay') {
         return 'Brgy. ' . sked_barangay_name((int) $ev['barangay_id']);
@@ -42,7 +38,7 @@ $scopeLabel = static function (array $ev) {
     return ucfirst((string) $ev['scope']);
 };
 
-$renderEventsTable = function (string $title, array $list, string $icon, string $emptyMsg) use ($statusBadge, $scopeLabel) {
+$renderEventsTable = function (string $title, array $list, string $icon, string $emptyMsg, string $tableId) use ($scopeLabel) {
     ?>
     <div class="docket-panel mb-4">
         <div class="section-heading">
@@ -52,7 +48,7 @@ $renderEventsTable = function (string $title, array $list, string $icon, string 
         <?php if (empty($list)): ?>
             <div class="text-center text-secondary py-5"><i class="bi <?php echo e($icon); ?> fs-1 d-block mb-2"></i><?php echo e($emptyMsg); ?></div>
         <?php else: ?>
-            <div class="table-responsive"><table class="table align-middle">
+            <div class="table-responsive"><table class="table align-middle" id="<?php echo e($tableId); ?>">
                 <thead><tr><th>Event</th><th>Scope</th><th>Date</th><th>Type</th><th>Status</th><th class="text-end">Action</th></tr></thead>
                 <tbody>
                 <?php foreach ($list as $ev): $c = sked_participant_counts((int) $ev['id']); ?>
@@ -76,7 +72,12 @@ $renderEventsTable = function (string $title, array $list, string $icon, string 
                         <td class="small"><?php echo e($scopeLabel($ev)); ?></td>
                         <td class="small text-secondary"><?php echo e($ev['event_date'] ? date('M j, Y', strtotime((string) $ev['event_date'])) : 'TBA'); ?></td>
                         <td class="small"><?php echo $ev['type'] === 'register' ? 'Register' : 'Join'; ?></td>
-                        <td><span class="badge text-bg-<?php echo e($statusBadge((string) $ev['status'])); ?>"><?php echo e(ucfirst((string) $ev['status'])); ?></span></td>
+                        <td>
+                            <span class="badge text-bg-<?php echo e(sked_event_display_badge_class($ev)); ?>"><?php echo e(sked_event_display_status_label($ev)); ?></span>
+                            <?php if (sked_event_needs_closeout($ev)): ?>
+                                <div class="small text-warning-emphasis mt-1" title="The event date has passed but the status was never advanced."><i class="bi bi-exclamation-triangle-fill me-1"></i>Needs closing out</div>
+                            <?php endif; ?>
+                        </td>
                         <td class="text-end"><a class="btn btn-sm btn-outline-primary" href="../manage/event.php?id=<?php echo (int) $ev['id']; ?>"><i class="bi bi-eye me-1"></i>View</a></td>
                     </tr>
                 <?php endforeach; ?>
@@ -124,12 +125,18 @@ $renderEventsTable = function (string $title, array $list, string $icon, string 
             </section>
 
             <?php
-                $renderEventsTable('Ongoing Events', $ongoingEvents, 'bi-play-circle', 'No events are currently ongoing.');
-                $renderEventsTable('Past Events', $pastEvents, 'bi-clock-history', 'No past events yet.');
-                $renderEventsTable('Upcoming Events', $upcomingEvents, 'bi-calendar-x', 'No upcoming events yet.');
+                $renderEventsTable('Ongoing Events', $ongoingEvents, 'bi-play-circle', 'No events are currently ongoing.', 'ongoingEventsTable');
+                $renderEventsTable('Past Events', $pastEvents, 'bi-clock-history', 'No past events yet.', 'pastEventsTable');
+                $renderEventsTable('Upcoming Events', $upcomingEvents, 'bi-calendar-x', 'No upcoming events yet.', 'upcomingEventsTable');
             ?>
         </main>
     </div>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="../../js/table-tools.js"></script>
+    <script>
+        ['ongoingEventsTable', 'pastEventsTable', 'upcomingEventsTable'].forEach(function (id) {
+            new SkedTableTools('#' + id, { pageSize: 8, filters: [{ label: 'Scope' }, { label: 'Type' }, { label: 'Status' }] });
+        });
+    </script>
 </body>
 </html>

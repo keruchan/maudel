@@ -23,6 +23,7 @@ $displayName = !empty($_SESSION['name']) ? (string) $_SESSION['name'] : 'SK Chai
 $todayLabel = date('l, F j, Y');
 $barangayName = $barangayId > 0 ? sked_barangay_name($barangayId) : '';
 $flash = ['type' => '', 'msg' => ''];
+$formErrors = [];
 
 if (empty($_SESSION['csrf_sk_members_token'])) {
     $_SESSION['csrf_sk_members_token'] = bin2hex(random_bytes(32));
@@ -32,10 +33,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $token = (string) ($_POST['csrf_token'] ?? '');
     $action = (string) ($_POST['action'] ?? '');
     if (!hash_equals((string) $_SESSION['csrf_sk_members_token'], $token)) {
-        $flash = ['type' => 'danger', 'msg' => 'Security validation failed. Please try again.'];
+        if ($action === 'save_member') {
+            $formErrors = ['Security validation failed. Please try again.'];
+            sked_form_retain(true);
+        } else {
+            $flash = ['type' => 'danger', 'msg' => 'Security validation failed. Please try again.'];
+        }
     } elseif ($action === 'save_member') {
         $r = sked_sk_official_save($barangayId, $userId, $_POST);
-        $flash = $r['ok'] ? ['type' => 'success', 'msg' => 'SK member saved.'] : ['type' => 'danger', 'msg' => implode(' ', $r['errors'])];
+        if ($r['ok']) {
+            $flash = ['type' => 'success', 'msg' => 'SK member saved.'];
+        } else {
+            $formErrors = $r['errors'];
+            sked_form_retain(true); // keep the roster entry being typed
+        }
     } elseif ($action === 'set_status') {
         $r = sked_sk_official_set_status((int) ($_POST['official_id'] ?? 0), $barangayId, (string) ($_POST['status'] ?? ''));
         $flash = $r['ok'] ? ['type' => 'info', 'msg' => 'Roster status updated.'] : ['type' => 'danger', 'msg' => implode(' ', $r['errors'])];
@@ -45,7 +56,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $members = $barangayId > 0 ? sked_sk_officials_for_barangay($barangayId, true) : [];
 $activeMembers = array_values(array_filter($members, static fn($m) => $m['status'] === 'active'));
 $candidates = $barangayId > 0 ? sked_sk_official_candidates($barangayId) : [];
-$editId = (int) ($_GET['edit'] ?? 0);
+$editId = (int) ($_GET['edit'] ?? (sked_form_retaining() ? ($_POST['official_id'] ?? 0) : 0));
 $editing = $editId > 0 ? sked_sk_official_get($editId, $barangayId) : null;
 $positions = sked_sk_position_options();
 ?>
@@ -124,15 +135,18 @@ $positions = sked_sk_position_options();
                         </div>
                         <form method="post" action="members.php">
                             <input type="hidden" name="csrf_token" value="<?php echo e((string) $_SESSION['csrf_sk_members_token']); ?>">
+
+                            <?php sked_render_form_errors($formErrors, 'The SK member could not be saved:'); ?>
+
                             <input type="hidden" name="action" value="save_member">
                             <input type="hidden" name="official_id" value="<?php echo (int) ($editing['id'] ?? 0); ?>">
 
                             <div class="mb-3">
                                 <label class="form-label">Link youth/community account</label>
                                 <select class="form-select" name="user_id">
-                                    <option value="0">No linked account / manual official</option>
+                                    <option value="0" <?php echo sked_old_selected('user_id', '0', (int) ($editing['user_id'] ?? 0) === 0) ? 'selected' : ''; ?>>No linked account / manual official</option>
                                     <?php foreach ($candidates as $candidate): ?>
-                                        <option value="<?php echo (int) $candidate['id']; ?>" <?php echo (int) ($editing['user_id'] ?? 0) === (int) $candidate['id'] ? 'selected' : ''; ?>>
+                                        <option value="<?php echo (int) $candidate['id']; ?>" <?php echo sked_old_selected('user_id', (string) $candidate['id'], (int) ($editing['user_id'] ?? 0) === (int) $candidate['id']) ? 'selected' : ''; ?>>
                                             <?php echo e((string) $candidate['name']); ?> @<?php echo e((string) $candidate['username']); ?><?php echo !empty($candidate['verified']) ? ' - verified' : ' - pending'; ?>
                                         </option>
                                     <?php endforeach; ?>
@@ -142,7 +156,7 @@ $positions = sked_sk_position_options();
 
                             <div class="mb-3">
                                 <label class="form-label">Display name</label>
-                                <input type="text" name="full_name" class="form-control" maxlength="150" value="<?php echo e((string) ($editing['full_name'] ?? '')); ?>" placeholder="Leave blank to use linked account name">
+                                <input type="text" name="full_name" class="form-control" maxlength="150" value="<?php echo e(sked_old('full_name', (string) ($editing['full_name'] ?? ''))); ?>" placeholder="Leave blank to use linked account name">
                             </div>
 
                             <div class="mb-3">
@@ -150,37 +164,37 @@ $positions = sked_sk_position_options();
                                 <select class="form-select" name="position" required>
                                     <option value="">Select position</option>
                                     <?php foreach ($positions as $value => $label): ?>
-                                        <option value="<?php echo e($value); ?>" <?php echo (string) ($editing['position'] ?? '') === $value ? 'selected' : ''; ?>><?php echo e($label); ?></option>
+                                        <option value="<?php echo e($value); ?>" <?php echo sked_old_selected('position', $value, (string) ($editing['position'] ?? '') === $value) ? 'selected' : ''; ?>><?php echo e($label); ?></option>
                                     <?php endforeach; ?>
                                 </select>
                             </div>
 
                             <div class="mb-3">
                                 <label class="form-label">Committee / assignment</label>
-                                <input type="text" name="committee" class="form-control" maxlength="120" value="<?php echo e((string) ($editing['committee'] ?? '')); ?>" placeholder="Youth Development, Sports, Education...">
+                                <input type="text" name="committee" class="form-control" maxlength="120" value="<?php echo e(sked_old('committee', (string) ($editing['committee'] ?? ''))); ?>" placeholder="Youth Development, Sports, Education...">
                             </div>
 
                             <div class="mb-3">
                                 <label class="form-label">Contact number</label>
-                                <input type="text" name="contact_no" class="form-control" maxlength="30" value="<?php echo e((string) ($editing['contact_no'] ?? '')); ?>">
+                                <input type="text" name="contact_no" class="form-control" maxlength="30" value="<?php echo e(sked_old('contact_no', (string) ($editing['contact_no'] ?? ''))); ?>">
                             </div>
 
                             <div class="row g-2 mb-3">
                                 <div class="col-6">
                                     <label class="form-label">Term start</label>
-                                    <input type="date" name="term_start" class="form-control" value="<?php echo e((string) ($editing['term_start'] ?? '')); ?>">
+                                    <input type="date" name="term_start" class="form-control" value="<?php echo e(sked_old('term_start', (string) ($editing['term_start'] ?? ''))); ?>">
                                 </div>
                                 <div class="col-6">
                                     <label class="form-label">Term end</label>
-                                    <input type="date" name="term_end" class="form-control" value="<?php echo e((string) ($editing['term_end'] ?? '')); ?>">
+                                    <input type="date" name="term_end" class="form-control" value="<?php echo e(sked_old('term_end', (string) ($editing['term_end'] ?? ''))); ?>">
                                 </div>
                             </div>
 
                             <div class="mb-3">
                                 <label class="form-label">Roster status</label>
                                 <select class="form-select" name="status">
-                                    <option value="active" <?php echo (string) ($editing['status'] ?? 'active') === 'active' ? 'selected' : ''; ?>>Active</option>
-                                    <option value="inactive" <?php echo (string) ($editing['status'] ?? '') === 'inactive' ? 'selected' : ''; ?>>Inactive</option>
+                                    <option value="active" <?php echo sked_old_selected('status', 'active', (string) ($editing['status'] ?? 'active') === 'active') ? 'selected' : ''; ?>>Active</option>
+                                    <option value="inactive" <?php echo sked_old_selected('status', 'inactive', (string) ($editing['status'] ?? '') === 'inactive') ? 'selected' : ''; ?>>Inactive</option>
                                 </select>
                             </div>
 
@@ -203,7 +217,7 @@ $positions = sked_sk_position_options();
                             </div>
                         <?php else: ?>
                             <div class="table-responsive">
-                                <table class="table align-middle">
+                                <table class="table align-middle" id="skOfficialsTable">
                                     <thead>
                                         <tr>
                                             <th>Official</th>
@@ -267,5 +281,9 @@ $positions = sked_sk_position_options();
         </main>
     </div>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="../../js/table-tools.js"></script>
+    <script>
+        new SkedTableTools('#skOfficialsTable', { pageSize: 10, filters: [{ label: 'Status' }] });
+    </script>
 </body>
 </html>

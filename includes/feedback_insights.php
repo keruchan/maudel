@@ -71,17 +71,43 @@ function sked_feedback_source_label(string $source): string
  * word-cloud sizing (1 = most frequent) assigned by rank quartile rather
  * than raw count, so one outlier word can't blow out the whole scale.
  *
- * @param array<int,array{text:string}> $corpus
- * @return array<int,array{word:string,count:int,pct:float,tier:int}>
+ * Each word also carries a SENTIMENT so the cloud can be filtered by tone:
+ *   - if the word is itself in the lexicon, that is its sentiment
+ *     ("delayed" is negative wherever it appears);
+ *   - otherwise it inherits the dominant sentiment of the entries it
+ *     appears in ("gym" is negative if people only mention it to complain),
+ *     which is what actually makes the filter useful — most topical words
+ *     carry no inherent tone, only the context they show up in.
+ * A word needs a clear majority (>50% of its mentions) to be tagged, else
+ * it stays neutral rather than being forced into a camp on a coin flip.
+ *
+ * Entry indexes are attached too, so clicking a word can reveal the exact
+ * comments it came from.
+ *
+ * @param array<int,array{text:string,label:string}> $entries Sentiment-labeled corpus.
+ * @return array<int,array{word:string,count:int,pct:float,tier:int,sentiment:string,entries:int[]}>
  */
-function sked_feedback_word_frequencies(array $corpus, int $limit = 30): array
+function sked_feedback_word_frequencies(array $entries, int $limit = 30): array
 {
     $counts = [];
+    $byLabel = [];   // word => ['positive'=>n,'negative'=>n,'neutral'=>n]
+    $entryIdx = [];  // word => [entry index, ...]
     $totalTokens = 0;
-    foreach ($corpus as $entry) {
-        foreach (sked_tokenize_text($entry['text']) as $word) {
+
+    foreach ($entries as $idx => $entry) {
+        $label = (string) ($entry['label'] ?? 'neutral');
+        $seenInThisEntry = [];
+        foreach (sked_tokenize_text((string) $entry['text']) as $word) {
             $counts[$word] = ($counts[$word] ?? 0) + 1;
             $totalTokens++;
+            if (!isset($byLabel[$word])) {
+                $byLabel[$word] = ['positive' => 0, 'negative' => 0, 'neutral' => 0];
+            }
+            if (!isset($seenInThisEntry[$word])) {
+                $byLabel[$word][$label]++;
+                $entryIdx[$word][] = $idx;
+                $seenInThisEntry[$word] = true;
+            }
         }
     }
     if (empty($counts)) { return []; }
@@ -91,14 +117,33 @@ function sked_feedback_word_frequencies(array $corpus, int $limit = 30): array
     $n = count($top);
     $i = 0;
     $out = [];
+
     foreach ($top as $word => $count) {
         $rankPct = $n > 1 ? $i / ($n - 1) : 0; // 0 = most frequent, 1 = least
         $tier = $rankPct <= 0.15 ? 1 : ($rankPct <= 0.4 ? 2 : ($rankPct <= 0.7 ? 3 : 4));
+
+        // Inherent lexicon tone wins; otherwise take a clear contextual majority.
+        $sentiment = sked_word_sentiment((string) $word);
+        if ($sentiment === null) {
+            $spread = $byLabel[$word] ?? ['positive' => 0, 'negative' => 0, 'neutral' => 0];
+            $mentions = array_sum($spread);
+            $sentiment = 'neutral';
+            if ($mentions > 0) {
+                arsort($spread);
+                $topLabel = (string) array_key_first($spread);
+                if ($topLabel !== 'neutral' && $spread[$topLabel] / $mentions > 0.5) {
+                    $sentiment = $topLabel;
+                }
+            }
+        }
+
         $out[] = [
-            'word' => $word,
+            'word' => (string) $word,
             'count' => $count,
             'pct' => $totalTokens > 0 ? round($count / $totalTokens * 100, 1) : 0.0,
             'tier' => $tier,
+            'sentiment' => $sentiment,
+            'entries' => array_values(array_unique($entryIdx[$word] ?? [])),
         ];
         $i++;
     }
@@ -127,6 +172,9 @@ function sked_feedback_sentiment_overview(array $corpus): array
             'created_at' => $entry['created_at'],
             'label' => $result['label'],
             'score' => $result['score'],
+            // Why this label — lets the UI show its working instead of
+            // asking an SK official to trust an unexplained verdict.
+            'why' => sked_sentiment_explain($result),
         ];
     }
 
@@ -198,7 +246,13 @@ function sked_feedback_spotlight(array $entries, int $limit = 8): array
     return array_slice($picked, 0, $limit);
 }
 
-/** One-call bundle for the analytics page: corpus + word cloud + sentiment + a spotlight sample. */
+/**
+ * One-call bundle for the analytics page: corpus + word cloud + sentiment +
+ * a spotlight sample.
+ *
+ * Sentiment is scored FIRST so the word cloud can inherit each entry's label
+ * — that is what lets cloud words be filtered by tone.
+ */
 function sked_feedback_insights_bundle(?int $barangayId = null): array
 {
     $corpus = sked_feedback_corpus($barangayId);
@@ -206,7 +260,7 @@ function sked_feedback_insights_bundle(?int $barangayId = null): array
 
     return [
         'corpus_count' => count($corpus),
-        'words' => sked_feedback_word_frequencies($corpus, 30),
+        'words' => sked_feedback_word_frequencies($sentiment['entries'], 40),
         'sentiment' => $sentiment,
         'recent' => sked_feedback_spotlight($sentiment['entries'], 8),
     ];

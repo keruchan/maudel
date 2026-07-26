@@ -137,7 +137,7 @@ $vacantBarangays = array_values(array_filter($barangays, static function ($b) {
                     <h2>Incoming SK Roster</h2>
                     <span class="section-note"><?php echo count($pendingRoster); ?> to provision</span>
                 </div>
-                <div class="table-responsive"><table class="table align-middle">
+                <div class="table-responsive"><table class="table align-middle" id="pendingTurnoverTable">
                     <thead><tr><th>Barangay</th><th>Incoming SK</th><th>Contact</th><th class="text-end">Action</th></tr></thead>
                     <tbody>
                     <?php foreach ($pendingRoster as $row): ?>
@@ -226,5 +226,9 @@ $vacantBarangays = array_values(array_filter($barangays, static function ($b) {
         </main>
     </div>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="../../js/table-tools.js"></script>
+    <script>
+        new SkedTableTools('#pendingTurnoverTable', { pageSize: 10 });
+    </script>
 </body>
 </html>

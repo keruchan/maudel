@@ -23,6 +23,7 @@ $displayName = !empty($_SESSION['name']) ? (string) $_SESSION['name'] : 'SK Chai
 $todayLabel = date('l, F j, Y');
 
 $flash = ['type' => '', 'msg' => ''];
+$formErrors = [];
 if (empty($_SESSION['csrf_katitikan_token'])) {
     $_SESSION['csrf_katitikan_token'] = bin2hex(random_bytes(32));
 }
@@ -30,7 +31,8 @@ if (empty($_SESSION['csrf_katitikan_token'])) {
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $token = (string) ($_POST['csrf_token'] ?? '');
     if (!hash_equals((string) $_SESSION['csrf_katitikan_token'], $token)) {
-        $flash = ['type' => 'danger', 'msg' => 'Security validation failed. Please try again.'];
+        $formErrors = ['Security validation failed. Please try again.'];
+        sked_form_retain(true);
     } else {
         $creator = ['id' => $userId, 'role' => $role, 'name' => $displayName, 'barangay_id' => $barangayId];
         $r = sked_katitikan_create($creator, $_POST);
@@ -38,7 +40,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             header('Location: ../manage/katitikan.php?id=' . $r['katitikan_id']);
             exit;
         }
-        $flash = ['type' => 'danger', 'msg' => implode(' ', $r['errors'])];
+        $formErrors = $r['errors'];
+        sked_form_retain(true); // keep the session details already typed
     }
 }
 
@@ -121,34 +124,37 @@ $defaultYear = (int) date('Y');
                         <div class="section-heading"><h2>New Session</h2></div>
                         <form method="post" action="katitikan.php">
                             <input type="hidden" name="csrf_token" value="<?php echo e((string) $_SESSION['csrf_katitikan_token']); ?>">
+
+                            <?php sked_render_form_errors($formErrors, 'The session could not be created:'); ?>
+
                             <div class="row g-2">
                                 <div class="col-6">
                                     <label class="form-label">Session No.</label>
-                                    <input type="text" class="form-control" name="session_no" maxlength="20" placeholder="001" required>
+                                    <input type="text" class="form-control" name="session_no" maxlength="20" placeholder="001" value="<?php echo e(sked_old('session_no')); ?>" required>
                                 </div>
                                 <div class="col-6">
                                     <label class="form-label">Series Year</label>
-                                    <input type="number" class="form-control" name="series_year" value="<?php echo (int) $defaultYear; ?>" min="2020" max="2100" required>
+                                    <input type="number" class="form-control" name="series_year" value="<?php echo e(sked_old('series_year', (string) $defaultYear)); ?>" min="2020" max="2100" required>
                                 </div>
                                 <div class="col-6">
                                     <label class="form-label">Meeting Date</label>
-                                    <input type="date" class="form-control" name="meeting_date" required>
+                                    <input type="date" class="form-control" name="meeting_date" value="<?php echo e(sked_old('meeting_date')); ?>" required>
                                 </div>
                                 <div class="col-6">
                                     <label class="form-label">Meeting Time</label>
-                                    <input type="time" class="form-control" name="meeting_time" required>
+                                    <input type="time" class="form-control" name="meeting_time" value="<?php echo e(sked_old('meeting_time')); ?>" required>
                                 </div>
                                 <div class="col-12">
                                     <label class="form-label">Venue</label>
-                                    <input type="text" class="form-control" name="venue" maxlength="150" placeholder="Barangay Session Hall" value="Barangay Session Hall">
+                                    <input type="text" class="form-control" name="venue" maxlength="150" placeholder="Barangay Session Hall" value="<?php echo e(sked_old('venue', 'Barangay Session Hall')); ?>">
                                 </div>
                                 <div class="col-12">
                                     <label class="form-label">Presiding Officer <span class="text-secondary fw-normal">(defaults to you)</span></label>
-                                    <input type="text" class="form-control" name="presiding_officer" maxlength="150" placeholder="<?php echo e($displayName); ?>">
+                                    <input type="text" class="form-control" name="presiding_officer" maxlength="150" placeholder="<?php echo e($displayName); ?>" value="<?php echo e(sked_old('presiding_officer')); ?>">
                                 </div>
                                 <div class="col-12">
                                     <label class="form-label">Prepared by <span class="text-secondary fw-normal">(SK Secretary)</span></label>
-                                    <input type="text" class="form-control" name="prepared_by_name" maxlength="150">
+                                    <input type="text" class="form-control" name="prepared_by_name" maxlength="150" value="<?php echo e(sked_old('prepared_by_name')); ?>">
                                 </div>
                             </div>
                             <button type="submit" class="btn btn-sked w-100 mt-3"><i class="bi bi-plus-lg me-1"></i>Create Minutes</button>
@@ -162,7 +168,7 @@ $defaultYear = (int) date('Y');
                             <div class="text-center text-secondary py-5"><i class="bi bi-journal-text fs-1 d-block mb-2"></i>No minutes recorded yet.</div>
                         <?php else: ?>
                             <div class="table-responsive">
-                                <table class="table align-middle">
+                                <table class="table align-middle" id="katitikanTable">
                                     <thead><tr><th>Session</th><th>Date</th><th>Status</th><th>DILG</th><th class="text-end">Action</th></tr></thead>
                                     <tbody>
                                     <?php foreach ($records as $k): ?>
@@ -185,5 +191,9 @@ $defaultYear = (int) date('Y');
         </main>
     </div>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="../../js/table-tools.js"></script>
+    <script>
+        new SkedTableTools('#katitikanTable', { pageSize: 10, filters: [{ label: 'Status' }] });
+    </script>
 </body>
 </html>

@@ -20,6 +20,7 @@ require_once __DIR__ . '/../../includes/view.php';
 require_once __DIR__ . '/../../includes/barangays.php';
 require_once __DIR__ . '/../../includes/events.php';
 require_once __DIR__ . '/../../includes/predictive.php';
+require_once __DIR__ . '/../../includes/attendance.php';
 
 require_roles(['sk', 'ppsk', 'dilg']);
 
@@ -71,17 +72,14 @@ $counts = sked_participant_counts($eventId);
 $rating = sked_event_rating($eventId);
 $nextStatuses = sked_event_next_statuses((string) $event['status']);
 $todayLabel = date('l, F j, Y');
-$canAttend = in_array($event['status'], ['confirmed', 'ongoing', 'completed', 'evaluation'], true);
+$canAttend = in_array($event['status'], SKED_ATTENDANCE_OPEN_STATUSES, true);
+$attendanceSummary = sked_attendance_summary($eventId);
 
 // Turnout is only worth predicting while the final headcount isn't settled yet.
 $turnoutPrediction = in_array($event['status'], ['draft', 'published', 'confirmed', 'ongoing'], true)
     ? sked_predict_event_turnout($event)
     : null;
 
-$statusBadge = static function (string $s): string {
-    $map = ['draft' => 'secondary', 'published' => 'primary', 'confirmed' => 'info', 'ongoing' => 'info', 'completed' => 'success', 'cancelled' => 'danger', 'evaluation' => 'warning', 'closed' => 'dark'];
-    return $map[$s] ?? 'secondary';
-};
 ?>
 <!doctype html>
 <html lang="en">
@@ -106,7 +104,7 @@ $statusBadge = static function (string $s): string {
                 <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3">
                     <div>
                         <div class="eyebrow"><a href="<?php echo e($eventsHref); ?>" class="text-decoration-none"><i class="bi bi-arrow-left"></i> Events</a> &middot; <?php echo e($todayLabel); ?></div>
-                        <h1 class="page-title"><?php echo e((string) $event['title']); ?> <span class="badge text-bg-<?php echo e($statusBadge((string) $event['status'])); ?> align-middle" style="font-size:.5em;"><?php echo e(ucfirst((string) $event['status'])); ?></span></h1>
+                        <h1 class="page-title"><?php echo e((string) $event['title']); ?> <span class="badge text-bg-<?php echo e(sked_event_display_badge_class($event)); ?> align-middle" style="font-size:.5em;"><?php echo e(sked_event_display_status_label($event)); ?></span></h1>
                         <p class="text-secondary meta-copy mb-0">
                             <i class="bi bi-calendar3 me-1"></i><?php echo e($event['event_date'] ? date('M j, Y', strtotime((string) $event['event_date'])) : 'TBA'); ?>
                             &middot; <?php echo $event['type'] === 'register' ? 'Register' : 'Join'; ?>
@@ -150,10 +148,25 @@ $statusBadge = static function (string $s): string {
                             </form>
                             <?php endif; ?>
                         </div>
+
+                        <?php if ($canAttend): ?>
+                        <div class="d-flex flex-wrap align-items-center gap-2 mb-3 p-3" style="background:var(--mist-100); border-radius:var(--radius-lg);">
+                            <div class="me-auto">
+                                <div class="fw-semibold"><i class="bi bi-qr-code me-1"></i>QR attendance</div>
+                                <div class="small text-secondary">
+                                    <?php echo (int) $attendanceSummary['attended']; ?> present &middot;
+                                    <?php echo (int) $attendanceSummary['finalized']; ?> finalized by evaluation &middot;
+                                    <?php echo (int) $attendanceSummary['self_scan']; ?> via self check-in
+                                </div>
+                            </div>
+                            <a class="btn btn-sm btn-sked" href="scan.php?event_id=<?php echo $eventId; ?>"><i class="bi bi-upc-scan me-1"></i>Scan ID cards</a>
+                            <a class="btn btn-sm btn-outline-primary" href="event_qr.php?id=<?php echo $eventId; ?>"><i class="bi bi-qr-code me-1"></i>Event QR<?php echo (int) ($event['self_scan_enabled'] ?? 0) === 1 ? ' (on)' : ''; ?></a>
+                        </div>
+                        <?php endif; ?>
                         <?php if (empty($roster)): ?>
                             <div class="text-center text-secondary py-5"><i class="bi bi-people fs-1 d-block mb-2"></i>No participants yet.</div>
                         <?php else: ?>
-                            <div class="table-responsive"><table class="table align-middle">
+                            <div class="table-responsive"><table class="table align-middle" id="rosterTable">
                                 <thead><tr><th>Name</th><?php if ((int) $event['is_team_sport'] === 1): ?><th>Team</th><?php endif; ?><th>Status</th><?php if ($canAttend): ?><th class="text-end">Attendance</th><?php endif; ?></tr></thead>
                                 <tbody>
                                 <?php foreach ($roster as $p): ?>
@@ -232,5 +245,9 @@ $statusBadge = static function (string $s): string {
         </main>
     </div>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="../../js/table-tools.js"></script>
+    <script>
+        new SkedTableTools('#rosterTable', { pageSize: 12, filters: [{ label: 'Status' }] });
+    </script>
 </body>
 </html>

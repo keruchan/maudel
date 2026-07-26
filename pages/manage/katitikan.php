@@ -93,6 +93,10 @@ if ($isEditable && $_SERVER['REQUEST_METHOD'] === 'POST') {
     }
     $k = sked_katitikan_get($id); // refresh
 }
+
+// Keep whatever was typed when a sub-form failed, so nothing is retyped.
+sked_form_retain(($flash['type'] ?? '') === 'danger');
+
 $officialRoster = $isEditable ? sked_sk_officials_for_barangay($sessionBarangayId) : [];
 $presentCount = count(array_filter($k['attendees'], static fn($a) => $a['attendance_status'] === 'present'));
 $absentCount = count(array_filter($k['attendees'], static fn($a) => $a['attendance_status'] === 'absent'));

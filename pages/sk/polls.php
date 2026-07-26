@@ -26,6 +26,7 @@ $displayName = !empty($_SESSION['name']) ? (string) $_SESSION['name'] : 'SK Chai
 $todayLabel = date('l, F j, Y');
 
 $flash = ['type' => '', 'msg' => ''];
+$formErrors = [];
 
 if (empty($_SESSION['csrf_polls_token'])) {
     $_SESSION['csrf_polls_token'] = bin2hex(random_bytes(32));
@@ -45,9 +46,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $creator = ['id' => $skUserId, 'role' => $role, 'name' => $displayName, 'barangay_id' => $barangayId];
         $options = array_filter(array_map('trim', (array) ($_POST['options'] ?? [])), static fn($o) => $o !== '');
         $r = sked_create_poll($creator, (string) ($_POST['question'] ?? ''), $options, !empty($_POST['publish']), (string) ($_POST['category'] ?? ''));
-        $flash = $r['ok']
-            ? ['type' => 'success', 'msg' => 'Poll created' . (!empty($_POST['publish']) ? ' and published.' : ' as a draft.')]
-            : ['type' => 'danger', 'msg' => implode(' ', array_map('e', $r['errors']))];
+        if ($r['ok']) {
+            $flash = ['type' => 'success', 'msg' => 'Poll created' . (!empty($_POST['publish']) ? ' and published.' : ' as a draft.')];
+        } else {
+            $formErrors = $r['errors'];
+            sked_form_retain(true); // keep the question and options the SK typed
+        }
     }
 }
 
@@ -104,23 +108,27 @@ $categories = sked_interest_categories();
                         <div class="section-heading"><h2>New Poll</h2></div>
                         <form method="post" action="polls.php" novalidate>
                             <input type="hidden" name="csrf_token" value="<?php echo e((string) $_SESSION['csrf_polls_token']); ?>">
+
+                            <?php sked_render_form_errors($formErrors, 'The poll could not be created:'); ?>
+
                             <div class="mb-3">
                                 <label for="question" class="form-label">Question</label>
-                                <input type="text" class="form-control" id="question" name="question" maxlength="300" required>
+                                <input type="text" class="form-control" id="question" name="question" maxlength="300" value="<?php echo e(sked_old('question')); ?>" required>
                             </div>
                             <div class="mb-3">
                                 <label for="category" class="form-label">Topic <span class="text-secondary fw-normal">(optional — feeds program recommendations)</span></label>
                                 <select class="form-select" id="category" name="category">
                                     <option value="">— None —</option>
-                                    <?php foreach ($categories as $c): ?><option value="<?php echo e($c); ?>"><?php echo e($c); ?></option><?php endforeach; ?>
+                                    <?php foreach ($categories as $c): ?><option value="<?php echo e($c); ?>" <?php echo sked_old_selected('category', $c) ? 'selected' : ''; ?>><?php echo e($c); ?></option><?php endforeach; ?>
                                 </select>
                             </div>
                             <label class="form-label">Answer options <span class="text-secondary fw-normal">(2&ndash;6, blank ones ignored)</span></label>
+                            <?php $oldOptions = sked_old_array('options'); ?>
                             <?php for ($i = 1; $i <= 6; $i++): ?>
-                                <input type="text" class="form-control mb-2" name="options[]" maxlength="150" placeholder="Option <?php echo $i; ?><?php echo $i > 2 ? ' (optional)' : ''; ?>" <?php echo $i <= 2 ? 'required' : ''; ?>>
+                                <input type="text" class="form-control mb-2" name="options[]" maxlength="150" value="<?php echo e($oldOptions[$i - 1] ?? ''); ?>" placeholder="Option <?php echo $i; ?><?php echo $i > 2 ? ' (optional)' : ''; ?>" <?php echo $i <= 2 ? 'required' : ''; ?>>
                             <?php endfor; ?>
                             <div class="form-check mb-3 mt-1">
-                                <input class="form-check-input" type="checkbox" id="publish" name="publish" value="1" checked>
+                                <input class="form-check-input" type="checkbox" id="publish" name="publish" value="1" <?php echo sked_old_checked('publish', '1', true) ? 'checked' : ''; ?>>
                                 <label class="form-check-label" for="publish">Publish now (open for votes)</label>
                             </div>
                             <button type="submit" class="btn btn-sked w-100"><i class="bi bi-bar-chart-steps me-1"></i> Create poll</button>
