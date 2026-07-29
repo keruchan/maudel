@@ -41,6 +41,7 @@ $eligibleEvents = ($isVerified && $barangayId > 0) ? sked_events_for_youth($user
 $ongoingCount = count(array_filter($eligibleEvents, static fn ($e) => sked_event_time_bucket($e) === 'ongoing'));
 $upcomingOpenCount = count(array_filter($eligibleEvents, static fn ($e) => sked_event_time_bucket($e) === 'upcoming'));
 $openPollsCount = ($isVerified && $barangayId > 0) ? count(sked_open_polls_for_youth($barangayId)) : 0;
+$topYouth = $barangayId > 0 ? sked_top_youth_by_engagement($barangayId, 10) : [];
 ?>
 <!doctype html>
 <html lang="en">
@@ -109,27 +110,17 @@ $openPollsCount = ($isVerified && $barangayId > 0) ? count(sked_open_polls_for_y
             <section class="mb-5" aria-label="Youth dashboard data links">
                 <div class="row g-3">
                     <div class="col-md-6 col-xl-3">
-                        <a class="ledger-card <?php echo $isVerified ? '' : 'accent-amber'; ?> stagger-1 text-reset text-decoration-none d-block" href="profile.php">
+                        <a class="ledger-card <?php echo $isVerified && $hasProfile ? 'accent-teal' : 'accent-amber'; ?> stagger-1 text-reset text-decoration-none d-block" href="profile.php">
                             <div class="d-flex justify-content-between align-items-start">
-                                <span class="ledger-icon"><i class="bi bi-person-vcard"></i></span>
-                                <span class="ledger-tag">Profile</span>
+                                <span class="ledger-icon"><i class="bi <?php echo $isVerified ? 'bi-person-vcard' : 'bi-lock'; ?>"></i></span>
+                                <span class="ledger-tag">KK Status</span>
                             </div>
                             <div class="ledger-value" style="font-size:1.35rem;"><?php echo $isVerified ? 'Verified' : 'Pending'; ?></div>
-                            <div class="ledger-caption">KK membership status</div>
+                            <div class="ledger-caption">Profile: <?php echo $hasProfile ? 'Complete' : 'Incomplete'; ?></div>
                         </a>
                     </div>
                     <div class="col-md-6 col-xl-3">
-                        <a class="ledger-card <?php echo $hasProfile ? 'accent-teal' : 'accent-amber'; ?> stagger-2 text-reset text-decoration-none d-block" href="profile.php">
-                            <div class="d-flex justify-content-between align-items-start">
-                                <span class="ledger-icon"><i class="bi bi-clipboard2-data"></i></span>
-                                <span class="ledger-tag">KK Form</span>
-                            </div>
-                            <div class="ledger-value" style="font-size:1.35rem;"><?php echo $hasProfile ? 'Complete' : 'Incomplete'; ?></div>
-                            <div class="ledger-caption">KK profiling record</div>
-                        </a>
-                    </div>
-                    <div class="col-md-6 col-xl-3">
-                        <a class="ledger-card <?php echo $isVerified ? 'accent-teal' : 'accent-amber'; ?> stagger-3 text-reset text-decoration-none d-block" href="events.php">
+                        <a class="ledger-card <?php echo $isVerified ? 'accent-teal' : 'accent-amber'; ?> stagger-2 text-reset text-decoration-none d-block" href="events.php">
                             <div class="d-flex justify-content-between align-items-start">
                                 <span class="ledger-icon"><i class="bi <?php echo $isVerified ? 'bi-calendar-check' : 'bi-lock'; ?>"></i></span>
                                 <span class="ledger-tag">Registered</span>
@@ -139,7 +130,7 @@ $openPollsCount = ($isVerified && $barangayId > 0) ? count(sked_open_polls_for_y
                         </a>
                     </div>
                     <div class="col-md-6 col-xl-3">
-                        <a class="ledger-card accent-teal stagger-4 text-reset text-decoration-none d-block" href="events.php">
+                        <a class="ledger-card accent-teal stagger-3 text-reset text-decoration-none d-block" href="events.php">
                             <div class="d-flex justify-content-between align-items-start">
                                 <span class="ledger-icon"><i class="bi bi-play-circle"></i></span>
                                 <span class="ledger-tag">Ongoing</span>
@@ -176,6 +167,16 @@ $openPollsCount = ($isVerified && $barangayId > 0) ? count(sked_open_polls_for_y
                             </div>
                             <div class="ledger-value <?php echo $isVerified ? 'tabular' : ''; ?>" style="<?php echo $isVerified ? '' : 'font-size:1.35rem;'; ?>"><?php echo $isVerified ? (int) $totalPoints : 'Locked'; ?></div>
                             <div class="ledger-caption"><?php echo $isVerified ? e($engagement['level']['label']) : 'Unlocks after verification'; ?></div>
+                        </a>
+                    </div>
+                    <div class="col-md-6 col-xl-3">
+                        <a class="ledger-card text-reset text-decoration-none d-block" href="leaderboard.php">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <span class="ledger-icon"><i class="bi bi-trophy"></i></span>
+                                <span class="ledger-tag">Top Youth</span>
+                            </div>
+                            <div class="ledger-value tabular"><?php echo count($topYouth); ?></div>
+                            <div class="ledger-caption">Barangay leaderboard</div>
                         </a>
                     </div>
                     <div class="col-md-6 col-xl-3">
@@ -219,6 +220,13 @@ $openPollsCount = ($isVerified && $barangayId > 0) ? count(sked_open_polls_for_y
                                 <div class="docket-sub"><?php echo e($engagement['level']['label']); ?><?php echo $engagement['next'] !== null ? ' &middot; ' . (int) $engagement['points_to_next'] . ' pts to ' . e($engagement['next']['label']) : ' &middot; Highest tier reached'; ?></div>
                             </div>
                             <span class="count-badge tabular"><?php echo (int) $totalPoints; ?> pts</span>
+                        </a>
+                        <a class="docket-row text-reset text-decoration-none" href="leaderboard.php">
+                            <div>
+                                <div class="docket-title">Top 10 youth in my barangay <i class="bi bi-arrow-right small text-secondary"></i></div>
+                                <div class="docket-sub">Based on participation and engagement points</div>
+                            </div>
+                            <span class="count-badge tabular"><?php echo count($topYouth); ?> listed</span>
                         </a>
                         <?php else: ?>
                         <div class="docket-row" style="opacity:.62;">

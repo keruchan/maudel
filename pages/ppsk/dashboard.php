@@ -19,8 +19,7 @@ require_once __DIR__ . '/../../includes/compliance.php';
 require_once __DIR__ . '/../../includes/profiling.php';
 require_once __DIR__ . '/../../includes/reports.php';
 require_once __DIR__ . '/../../includes/turnover.php';
-require_once __DIR__ . '/../../includes/cbydp.php';
-require_once __DIR__ . '/../../includes/abyip.php';
+require_once __DIR__ . '/../../includes/plan_documents.php';
 
 require_role('ppsk');
 
@@ -38,7 +37,7 @@ $youthSummary = sked_youth_profile_summary();
 $totalYouth = array_sum(array_column($youthSummary, 'total_youth'));
 $pendingChairpersonReports = count(sked_reports_for_role('ppsk', ['type' => 'monthly', 'status' => 'submitted']));
 $pendingRosterCount = count(sked_pending_roster_rows());
-$totalPlansCount = count(sked_cbydp_list_all()) + count(sked_abyip_list_all());
+$totalPlansCount = count(sked_plan_documents_all('cbydp')) + count(sked_plan_documents_all('abyip'));
 $topRecommendation = sked_recommend_categories(null, 1);
 $topFocusCategory = $topRecommendation[0]['category'] ?? null;
 $skWithStrikesCount = count(array_filter(sked_compliance_overview(), static fn ($r) => (int) $r['strikes'] > 0));

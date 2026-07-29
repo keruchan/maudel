@@ -83,6 +83,42 @@ function sked_total_points(int $userId): int
 }
 
 /**
+ * Barangay leaderboard based on the same participation-points ledger that
+ * powers engagement levels.
+ *
+ * @return array<int,array{id:int,name:string,username:string,points:int,engagement_count:int,last_engaged_at:?string}>
+ */
+function sked_top_youth_by_engagement(int $barangayId, int $limit = 10): array
+{
+    if ($barangayId <= 0) {
+        return [];
+    }
+    $limit = max(1, min(50, $limit));
+
+    try {
+        $stmt = sked_db()->prepare(
+            "SELECT u.id, u.name, u.username,
+                    COALESCE(SUM(pl.points), 0) AS points,
+                    COUNT(pl.id) AS engagement_count,
+                    MAX(pl.created_at) AS last_engaged_at
+               FROM users u
+          LEFT JOIN points_ledger pl ON pl.user_id = u.id
+              WHERE u.role = 'youth'
+                AND u.status = 'active'
+                AND u.verified = 1
+                AND u.barangay_id = :bgy
+           GROUP BY u.id, u.name, u.username
+           ORDER BY points DESC, engagement_count DESC, u.name ASC
+              LIMIT $limit"
+        );
+        $stmt->execute(['bgy' => $barangayId]);
+        return $stmt->fetchAll();
+    } catch (Throwable $e) {
+        return [];
+    }
+}
+
+/**
  * Engagement-level tiers, ascending by point threshold. Tune here as the
  * scheme evolves — nothing else needs to change.
  *

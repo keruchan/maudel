@@ -16,8 +16,7 @@ require_once __DIR__ . '/../includes/barangays.php';
 require_once __DIR__ . '/../includes/events.php';
 require_once __DIR__ . '/../includes/announcements.php';
 require_once __DIR__ . '/../includes/profiling.php';
-require_once __DIR__ . '/../includes/cbydp.php';
-require_once __DIR__ . '/../includes/abyip.php';
+require_once __DIR__ . '/../includes/plan_documents.php';
 
 // Live community-reach figures for the hero strip and stats band — no
 // hardcoded placeholder counts.
@@ -26,8 +25,9 @@ $totalBarangays = count($activeBarangays);
 $youthProfileSummary = sked_youth_profile_summary();
 $totalYouthRegistered = array_sum(array_column($youthProfileSummary, 'total_youth'));
 $eventsHostedCount = (int) sked_db()->query("SELECT COUNT(*) FROM events WHERE status IN ('completed','closed')")->fetchColumn();
-$programsCompletedCount = count(array_filter(sked_cbydp_list_all(), static fn ($p) => $p['status'] === 'finalized'))
-    + count(array_filter(sked_abyip_list_all(), static fn ($p) => $p['status'] === 'finalized'));
+// CBYDP/ABYIP are now simple public uploads (no draft/finalized workflow —
+// see includes/plan_documents.php), so every uploaded copy counts.
+$programsCompletedCount = count(sked_plan_documents_all('cbydp')) + count(sked_plan_documents_all('abyip'));
 
 // Recognize an already-authenticated visitor without requiring one. The role
 // dashboard paths are written for callers one directory below pages/ (e.g.

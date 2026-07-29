@@ -3,11 +3,13 @@
  * ============================================================
  * File     : pages/ppsk/plans.php
  * Project  : SKed - Youth Profiling System for Event Management
- * Purpose  : PPSK oversight list of every barangay's CBYDP/ABYIP (P12) —
- *            view-only; editing stays with each barangay's own SK. Links
- *            into the shared pages/manage/{cbydp,abyip}_plan.php detail
- *            pages (which render read-only for this role) and their
- *            export views.
+ * Purpose  : PPSK oversight list of every barangay's uploaded Youth
+ *            Development Plan documents (CBYDP/ABYIP/Annual Budget/Monthly
+ *            Purchase Request — see includes/plan_documents.php). Purely
+ *            view-only; uploading stays with each barangay's own SK. These
+ *            documents are also fully public (pages/public/plan_document.php
+ *            needs no login), so this page is just a convenient filtered
+ *            municipality-wide index for PPSK, not a special access path.
  * ============================================================
  */
 
@@ -15,8 +17,7 @@ require_once __DIR__ . '/../../config/config.php';
 require_once __DIR__ . '/../../includes/auth.php';
 require_once __DIR__ . '/../../includes/navigation.php';
 require_once __DIR__ . '/../../includes/view.php';
-require_once __DIR__ . '/../../includes/cbydp.php';
-require_once __DIR__ . '/../../includes/abyip.php';
+require_once __DIR__ . '/../../includes/plan_documents.php';
 
 require_role('ppsk');
 
@@ -24,8 +25,8 @@ $role = (string) $_SESSION['role'];
 $displayName = !empty($_SESSION['name']) ? (string) $_SESSION['name'] : 'Pederasyon President';
 $todayLabel = date('l, F j, Y');
 
-$cbydps = sked_cbydp_list_all();
-$abyips = sked_abyip_list_all();
+$typeFilter = (string) ($_GET['type'] ?? '');
+$documents = sked_plan_documents_all($typeFilter);
 ?>
 <!doctype html>
 <html lang="en">
@@ -38,7 +39,7 @@ $abyips = sked_abyip_list_all();
     <link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="../../css/dashboard.css?v=2">
+    <link rel="stylesheet" href="../../css/dashboard.css?v=3">
 </head>
 <body>
     <a href="#main-content" class="skip-link">Skip to main content</a>
@@ -51,7 +52,7 @@ $abyips = sked_abyip_list_all();
                     <div>
                         <div class="eyebrow">Federation Oversight &middot; <?php echo e($todayLabel); ?></div>
                         <h1 class="page-title">Youth Development Plans</h1>
-                        <p class="text-secondary meta-copy mb-0">CBYDP and ABYIP across every barangay — view, export, and check for signed copies on file.</p>
+                        <p class="text-secondary meta-copy mb-0">CBYDP, ABYIP, Annual Budgets, and Monthly Purchase Requests uploaded by every barangay.</p>
                     </div>
                     <div class="d-flex align-items-center gap-2">
                         <?php render_sked_notification_bell('header'); ?><span class="officer-chip">
@@ -63,51 +64,29 @@ $abyips = sked_abyip_list_all();
                 <svg class="ridge-divider" viewBox="0 0 1200 20" preserveAspectRatio="none" aria-hidden="true"><path d="M0 14 Q150 2 300 12 T600 10 T900 13 T1200 8" fill="none" stroke="#818cf8" stroke-width="2"/></svg>
             </section>
 
-            <div class="docket-panel mb-4">
-                <div class="section-heading"><h2>CBYDP</h2><span class="section-note"><?php echo count($cbydps); ?> plans</span></div>
-                <?php if (empty($cbydps)): ?>
-                    <div class="text-center text-secondary py-4">No CBYDP submitted yet.</div>
-                <?php else: ?>
-                    <div class="table-responsive">
-                        <table class="table align-middle" id="cbydpOversightTable">
-                            <thead><tr><th>Barangay</th><th>Cycle</th><th>Status</th><th>Signed Copy</th><th class="text-end">Action</th></tr></thead>
-                            <tbody>
-                            <?php foreach ($cbydps as $p): ?>
-                                <tr>
-                                    <td class="fw-semibold"><?php echo e((string) $p['barangay_name']); ?></td>
-                                    <td>CY <?php echo (int) $p['cy_year_start']; ?>–<?php echo (int) $p['cy_year_start'] + 2; ?></td>
-                                    <td><span class="badge <?php echo $p['status'] === 'finalized' ? 'text-bg-success' : 'text-bg-secondary'; ?> text-capitalize"><?php echo e((string) $p['status']); ?></span></td>
-                                    <td><?php echo !empty($p['signed_file_path']) ? '<span class="badge text-bg-success"><i class="bi bi-check-lg"></i> On file</span>' : '<span class="badge text-bg-light">None yet</span>'; ?></td>
-                                    <td class="text-end">
-                                        <a href="../manage/cbydp_plan.php?id=<?php echo (int) $p['id']; ?>" class="btn btn-sm btn-sked"><i class="bi bi-eye"></i>View</a>
-                                        <a href="../manage/cbydp_export.php?id=<?php echo (int) $p['id']; ?>" class="btn btn-sm btn-outline-secondary" target="_blank"><i class="bi bi-download"></i>Export</a>
-                                    </td>
-                                </tr>
-                            <?php endforeach; ?>
-                            </tbody>
-                        </table>
-                    </div>
-                <?php endif; ?>
-            </div>
-
             <div class="docket-panel">
-                <div class="section-heading"><h2>ABYIP</h2><span class="section-note"><?php echo count($abyips); ?> plans</span></div>
-                <?php if (empty($abyips)): ?>
-                    <div class="text-center text-secondary py-4">No ABYIP submitted yet.</div>
+                <div class="section-heading"><h2>Uploaded Documents</h2><span class="section-note"><?php echo count($documents); ?> total</span></div>
+                <div class="d-flex gap-2 flex-wrap mb-3">
+                    <a href="plans.php" class="btn btn-sm <?php echo $typeFilter === '' ? 'btn-sked' : 'btn-outline-secondary'; ?>">All</a>
+                    <?php foreach (SKED_PLAN_DOC_TYPES as $t): ?>
+                        <a href="plans.php?type=<?php echo e($t); ?>" class="btn btn-sm <?php echo $typeFilter === $t ? 'btn-sked' : 'btn-outline-secondary'; ?>"><?php echo e(sked_plan_doc_type_label($t)); ?></a>
+                    <?php endforeach; ?>
+                </div>
+                <?php if (empty($documents)): ?>
+                    <div class="text-center text-secondary py-4"><i class="bi bi-file-earmark-arrow-up fs-1 d-block mb-2"></i>No documents uploaded yet.</div>
                 <?php else: ?>
                     <div class="table-responsive">
-                        <table class="table align-middle" id="abyipOversightTable">
-                            <thead><tr><th>Barangay</th><th>Year</th><th>Status</th><th>Signed Copy</th><th class="text-end">Action</th></tr></thead>
+                        <table class="table align-middle" id="plansOversightTable">
+                            <thead><tr><th>Barangay</th><th>Type</th><th>Period</th><th>Uploaded</th><th class="text-end">Action</th></tr></thead>
                             <tbody>
-                            <?php foreach ($abyips as $p): ?>
+                            <?php foreach ($documents as $d): ?>
                                 <tr>
-                                    <td class="fw-semibold"><?php echo e((string) $p['barangay_name']); ?></td>
-                                    <td>CY <?php echo (int) $p['calendar_year']; ?></td>
-                                    <td><span class="badge <?php echo $p['status'] === 'finalized' ? 'text-bg-success' : 'text-bg-secondary'; ?> text-capitalize"><?php echo e((string) $p['status']); ?></span></td>
-                                    <td><?php echo !empty($p['signed_file_path']) ? '<span class="badge text-bg-success"><i class="bi bi-check-lg"></i> On file</span>' : '<span class="badge text-bg-light">None yet</span>'; ?></td>
+                                    <td class="fw-semibold"><?php echo e((string) $d['barangay_name']); ?></td>
+                                    <td><?php echo e(sked_plan_doc_type_label((string) $d['doc_type'])); ?></td>
+                                    <td><?php echo e((string) $d['period_label']); ?></td>
+                                    <td class="small text-secondary"><?php echo e(date('M j, Y', strtotime((string) $d['uploaded_at']))); ?></td>
                                     <td class="text-end">
-                                        <a href="../manage/abyip_plan.php?id=<?php echo (int) $p['id']; ?>" class="btn btn-sm btn-sked"><i class="bi bi-eye"></i>View</a>
-                                        <a href="../manage/abyip_export.php?id=<?php echo (int) $p['id']; ?>" class="btn btn-sm btn-outline-secondary" target="_blank"><i class="bi bi-download"></i>Export</a>
+                                        <a href="../public/plan_document.php?id=<?php echo (int) $d['id']; ?>" class="btn btn-sm btn-sked" target="_blank"><i class="bi bi-eye"></i>View Attachment</a>
                                     </td>
                                 </tr>
                             <?php endforeach; ?>
@@ -121,8 +100,7 @@ $abyips = sked_abyip_list_all();
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     <script src="../../js/table-tools.js?v=4"></script>
     <script>
-        new SkedTableTools('#cbydpOversightTable', { pageSize: 10, filters: [{ label: 'Status' }] });
-        new SkedTableTools('#abyipOversightTable', { pageSize: 10, filters: [{ label: 'Status' }] });
+        new SkedTableTools('#plansOversightTable', { pageSize: 15, filters: [{ label: 'Type' }] });
     </script>
 </body>
 </html>
