@@ -2,9 +2,9 @@
 /**
  * Barangay SK officials roster.
  *
- * Declares SK members and positions without changing their auth role. Linked
- * accounts remain youth/community accounts and simply receive a recognition
- * tag wherever the roster is shown.
+ * Declares SK members and positions from verified youth accounts without
+ * changing their auth role. The youth account receives a recognition tag
+ * wherever the roster is shown.
  */
 
 require_once __DIR__ . '/../../config/config.php';
@@ -56,8 +56,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $members = $barangayId > 0 ? sked_sk_officials_for_barangay($barangayId, true) : [];
 $activeMembers = array_values(array_filter($members, static fn($m) => $m['status'] === 'active'));
 $candidates = $barangayId > 0 ? sked_sk_official_candidates($barangayId) : [];
+$verifiedLinkedCount = count(array_filter($activeMembers, static fn($m) => !empty($m['user_id']) && (string) ($m['account_role'] ?? '') === 'youth' && (string) ($m['account_status'] ?? '') === 'active' && !empty($m['verified'])));
+$accountIssueCount = count($activeMembers) - $verifiedLinkedCount;
 $editId = (int) ($_GET['edit'] ?? (sked_form_retaining() ? ($_POST['official_id'] ?? 0) : 0));
 $editing = $editId > 0 ? sked_sk_official_get($editId, $barangayId) : null;
+$declaredUserIds = array_flip(array_map(
+    static fn($m) => (int) $m['user_id'],
+    array_filter($members, static fn($m) => !empty($m['user_id']) && (int) $m['id'] !== $editId)
+));
+$candidates = array_values(array_filter($candidates, static fn($c) => !isset($declaredUserIds[(int) $c['id']])));
 $positions = sked_sk_position_options();
 ?>
 <!doctype html>
@@ -85,7 +92,7 @@ $positions = sked_sk_position_options();
                     <div>
                         <div class="eyebrow">Barangay <?php echo e($barangayName !== '' ? $barangayName : 'Council'); ?> &middot; <?php echo e($todayLabel); ?></div>
                         <h1 class="page-title">SK Members</h1>
-                        <p class="text-secondary meta-copy mb-0">Declare SK officials and positions for roll call, attendance tracking, and youth account recognition.</p>
+                        <p class="text-secondary meta-copy mb-0">Declare SK officials from fully verified youth accounts for roll call, attendance tracking, and account recognition.</p>
                     </div>
                     <div class="d-flex align-items-center gap-2">
                         <?php render_sked_notification_bell('header'); ?><span class="officer-chip">
@@ -113,9 +120,9 @@ $positions = sked_sk_position_options();
                 </div>
                 <div class="col-sm-4">
                     <div class="ledger-card accent-teal">
-                        <span class="ledger-tag">Linked Accounts</span>
-                        <div class="ledger-value tabular"><?php echo count(array_filter($activeMembers, static fn($m) => !empty($m['user_id']))); ?></div>
-                        <div class="ledger-caption">Youth/community accounts with tags</div>
+                        <span class="ledger-tag">Verified Youth Accounts</span>
+                        <div class="ledger-value tabular"><?php echo $verifiedLinkedCount; ?></div>
+                        <div class="ledger-caption"><?php echo $accountIssueCount; ?> roster issue<?php echo $accountIssueCount === 1 ? '' : 's'; ?></div>
                     </div>
                 </div>
                 <div class="col-sm-4">
@@ -141,22 +148,23 @@ $positions = sked_sk_position_options();
                             <input type="hidden" name="action" value="save_member">
                             <input type="hidden" name="official_id" value="<?php echo (int) ($editing['id'] ?? 0); ?>">
 
+                            <?php if (empty($candidates)): ?>
+                                <div class="alert alert-info py-2 small" role="alert">
+                                    <i class="bi bi-person-check me-1"></i>No verified youth accounts are available yet. Register and verify the youth account first from <a class="alert-link" href="kk_members.php">KK Members</a>.
+                                </div>
+                            <?php endif; ?>
+
                             <div class="mb-3">
-                                <label class="form-label">Link youth/community account</label>
-                                <select class="form-select" name="user_id">
-                                    <option value="0" <?php echo sked_old_selected('user_id', '0', (int) ($editing['user_id'] ?? 0) === 0) ? 'selected' : ''; ?>>No linked account / manual official</option>
+                                <label class="form-label">Verified youth account</label>
+                                <select class="form-select" name="user_id" required>
+                                    <option value="">Select verified youth account</option>
                                     <?php foreach ($candidates as $candidate): ?>
                                         <option value="<?php echo (int) $candidate['id']; ?>" <?php echo sked_old_selected('user_id', (string) $candidate['id'], (int) ($editing['user_id'] ?? 0) === (int) $candidate['id']) ? 'selected' : ''; ?>>
-                                            <?php echo e((string) $candidate['name']); ?> @<?php echo e((string) $candidate['username']); ?><?php echo !empty($candidate['verified']) ? ' - verified' : ' - pending'; ?>
+                                            <?php echo e((string) $candidate['name']); ?> @<?php echo e((string) $candidate['username']); ?>
                                         </option>
                                     <?php endforeach; ?>
                                 </select>
-                                <div class="form-text">Linked users keep their Youth portal account. SKed only adds the position tag.</div>
-                            </div>
-
-                            <div class="mb-3">
-                                <label class="form-label">Display name</label>
-                                <input type="text" name="full_name" class="form-control" maxlength="150" value="<?php echo e(sked_old('full_name', (string) ($editing['full_name'] ?? ''))); ?>" placeholder="Leave blank to use linked account name">
+                                <div class="form-text">Only active, fully verified youth accounts in this barangay can be declared as SK members.</div>
                             </div>
 
                             <div class="mb-3">
@@ -229,15 +237,21 @@ $positions = sked_sk_position_options();
                                     </thead>
                                     <tbody>
                                     <?php foreach ($members as $member): ?>
-                                        <?php $rate = sked_sk_official_attendance_rate($member); ?>
+                                        <?php
+                                            $rate = sked_sk_official_attendance_rate($member);
+                                            $hasVerifiedYouthAccount = !empty($member['user_id'])
+                                                && (string) ($member['account_role'] ?? '') === 'youth'
+                                                && (string) ($member['account_status'] ?? '') === 'active'
+                                                && !empty($member['verified']);
+                                        ?>
                                         <tr>
                                             <td>
                                                 <div class="fw-semibold"><?php echo e((string) $member['full_name']); ?></div>
                                                 <div class="small text-secondary">
-                                                    <?php if (!empty($member['username'])): ?>
-                                                        <i class="bi bi-person-check me-1"></i>Youth account @<?php echo e((string) $member['username']); ?>
+                                                    <?php if ($hasVerifiedYouthAccount): ?>
+                                                        <i class="bi bi-person-check me-1"></i>Verified youth account @<?php echo e((string) $member['username']); ?>
                                                     <?php else: ?>
-                                                        <i class="bi bi-pencil-square me-1"></i>Manual roster entry
+                                                        <span class="text-danger"><i class="bi bi-exclamation-triangle me-1"></i>Needs verified youth account</span>
                                                     <?php endif; ?>
                                                 </div>
                                             </td>

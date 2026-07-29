@@ -2894,7 +2894,7 @@ td.text-end > details > .btn {
 }
 
 /* Click-through content: navigates to the notification's target and marks
-   it read. Actions (mark unread, delete) live outside this button so they
+   it read. Actions such as delete live outside this button so they
    aren't nested inside it. */
 .notif-item-main {
     flex: 1 1 auto;
@@ -4152,4 +4152,13 @@ td.text-end > details > .btn {
 .tier-status {
     text-align: center;
     margin-top: auto;
+}
+
+/* Landing-page "click through to this event" deep-link target row. */
+@keyframes sked-row-highlight {
+    0% { background: var(--gold-100); }
+    100% { background: transparent; }
+}
+.tt-row-highlight {
+    animation: sked-row-highlight 2.5s ease-out;
 }

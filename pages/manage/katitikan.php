@@ -56,14 +56,19 @@ if ($isEditable && $_SERVER['REQUEST_METHOD'] === 'POST') {
         $r = sked_katitikan_update_fields($id, $sessionBarangayId, $_POST);
         $flash = $r['ok'] ? ['type' => 'success', 'msg' => 'Saved.'] : ['type' => 'danger', 'msg' => implode(' ', $r['errors'])];
     } elseif ($action === 'add_attendee') {
-        $r = sked_katitikan_add_attendee($id, $sessionBarangayId, (string) ($_POST['name'] ?? ''), (string) ($_POST['designation'] ?? ''), (string) ($_POST['status'] ?? 'present'), (int) ($_POST['official_id'] ?? 0) ?: null);
+        $r = sked_katitikan_add_attendee($id, $sessionBarangayId, (string) ($_POST['name'] ?? ''), (string) ($_POST['designation'] ?? ''), 'present', (int) ($_POST['official_id'] ?? 0) ?: null);
         $flash = $r['ok'] ? ['type' => 'success', 'msg' => 'Attendee added.'] : ['type' => 'danger', 'msg' => implode(' ', $r['errors'])];
     } elseif ($action === 'add_official_attendees') {
-        $r = sked_katitikan_add_official_attendees($id, $sessionBarangayId, $_POST['official_ids'] ?? [], (string) ($_POST['status'] ?? 'present'));
+        $r = sked_katitikan_add_official_attendees($id, $sessionBarangayId, $_POST['official_ids'] ?? [], 'present');
         $added = (int) ($r['added'] ?? 0);
         $skipped = (int) ($r['skipped'] ?? 0);
         $flash = $r['ok']
             ? ['type' => 'success', 'msg' => $added . ' roster member' . ($added === 1 ? '' : 's') . ' added.' . ($skipped > 0 ? ' ' . $skipped . ' already existed.' : '')]
+            : ['type' => 'danger', 'msg' => implode(' ', $r['errors'])];
+    } elseif ($action === 'save_roster_attendance') {
+        $r = sked_katitikan_save_roster_attendance($id, $sessionBarangayId, $_POST['present_official_ids'] ?? []);
+        $flash = $r['ok']
+            ? ['type' => 'success', 'msg' => 'Roll call saved: ' . (int) ($r['present'] ?? 0) . ' present, ' . (int) ($r['absent'] ?? 0) . ' absent.']
             : ['type' => 'danger', 'msg' => implode(' ', $r['errors'])];
     } elseif ($action === 'delete_attendee') {
         $r = sked_katitikan_delete_attendee((int) ($_POST['attendee_id'] ?? 0), $sessionBarangayId);
@@ -101,6 +106,10 @@ $officialRoster = $isEditable ? sked_sk_officials_for_barangay($sessionBarangayI
 $presentCount = count(array_filter($k['attendees'], static fn($a) => $a['attendance_status'] === 'present'));
 $absentCount = count(array_filter($k['attendees'], static fn($a) => $a['attendance_status'] === 'absent'));
 $linkedAttendanceCount = count(array_filter($k['attendees'], static fn($a) => !empty($a['sk_official_id'])));
+$presentOfficialIds = array_flip(array_map(
+    static fn($a) => (int) $a['sk_official_id'],
+    array_filter($k['attendees'], static fn($a) => !empty($a['sk_official_id']) && $a['attendance_status'] === 'present')
+));
 ?>
 <!doctype html>
 <html lang="en">
@@ -200,26 +209,23 @@ $linkedAttendanceCount = count(array_filter($k['attendees'], static fn($a) => !e
                             <?php else: ?>
                                 <form method="post" action="katitikan.php?id=<?php echo $id; ?>" class="mb-3">
                                     <input type="hidden" name="csrf_token" value="<?php echo e((string) $_SESSION['csrf_katplan_token']); ?>">
-                                    <input type="hidden" name="action" value="add_official_attendees">
+                                    <input type="hidden" name="action" value="save_roster_attendance">
                                     <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
-                                        <label class="form-label mb-0">Add from SK roster</label>
-                                        <select name="status" class="form-select form-select-sm" style="width:auto;">
-                                            <option value="present">Mark selected present</option>
-                                            <option value="absent">Mark selected absent</option>
-                                        </select>
+                                        <label class="form-label mb-0">Roll call from SK roster</label>
+                                        <span class="small text-secondary">Check present officials. Unchecked officials will be saved as absent.</span>
                                     </div>
                                     <div class="row g-2">
                                         <?php foreach ($officialRoster as $official): ?>
                                             <div class="col-sm-6">
                                                 <label class="form-check rounded border px-3 py-2 h-100">
-                                                    <input class="form-check-input me-2" type="checkbox" name="official_ids[]" value="<?php echo (int) $official['id']; ?>">
+                                                    <input class="form-check-input me-2" type="checkbox" name="present_official_ids[]" value="<?php echo (int) $official['id']; ?>" <?php echo isset($presentOfficialIds[(int) $official['id']]) ? 'checked' : ''; ?>>
                                                     <span class="fw-semibold"><?php echo e((string) $official['full_name']); ?></span>
                                                     <span class="d-block small text-secondary"><?php echo e((string) $official['position']); ?><?php echo !empty($official['committee']) ? ' &middot; ' . e((string) $official['committee']) : ''; ?></span>
                                                 </label>
                                             </div>
                                         <?php endforeach; ?>
                                     </div>
-                                    <button type="submit" class="btn btn-sm btn-sked w-100 mt-2"><i class="bi bi-check2-square me-1"></i>Add Selected to Roll Call</button>
+                                    <button type="submit" class="btn btn-sm btn-sked w-100 mt-2"><i class="bi bi-check2-square me-1"></i>Save Roll Call</button>
                                 </form>
                             <?php endif; ?>
                         <?php endif; ?>
@@ -270,6 +276,7 @@ $linkedAttendanceCount = count(array_filter($k['attendees'], static fn($a) => !e
                         <form method="post" action="katitikan.php?id=<?php echo $id; ?>" class="row g-2">
                             <input type="hidden" name="csrf_token" value="<?php echo e((string) $_SESSION['csrf_katplan_token']); ?>">
                             <input type="hidden" name="action" value="add_attendee">
+                            <input type="hidden" name="status" value="present">
                             <div class="col-12">
                                 <select name="official_id" class="form-select form-select-sm">
                                     <option value="0">Manual entry, not linked to roster</option>
@@ -278,14 +285,8 @@ $linkedAttendanceCount = count(array_filter($k['attendees'], static fn($a) => !e
                                     <?php endforeach; ?>
                                 </select>
                             </div>
-                            <div class="col-5"><input type="text" name="name" class="form-control form-control-sm" placeholder="Name *"></div>
+                            <div class="col-7"><input type="text" name="name" class="form-control form-control-sm" placeholder="Name *"></div>
                             <div class="col-4"><input type="text" name="designation" class="form-control form-control-sm" placeholder="SK Chairperson / Member"></div>
-                            <div class="col-2">
-                                <select name="status" class="form-select form-select-sm">
-                                    <option value="present">Present</option>
-                                    <option value="absent">Absent</option>
-                                </select>
-                            </div>
                             <div class="col-1"><button type="submit" class="btn btn-sm btn-sked w-100"><i class="bi bi-plus"></i></button></div>
                         </form>
                         </div>

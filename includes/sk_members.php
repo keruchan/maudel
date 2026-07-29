@@ -2,9 +2,9 @@
 /**
  * Barangay SK officials roster.
  *
- * Officials are recognition records layered on top of youth/community
- * accounts. A row may link to users.id, but it does not change that user's
- * login role; the same account can continue using the Youth portal.
+ * Officials are recognition records layered on top of verified youth accounts.
+ * It does not change that user's login role; the same account continues using
+ * the Youth portal and receives an SK position tag.
  */
 
 require_once __DIR__ . '/../config/database.php';
@@ -42,8 +42,9 @@ function sked_sk_official_candidates(int $barangayId): array
         "SELECT id, name, username, status, verified
            FROM users
           WHERE barangay_id = :bgy
-            AND role IN ('youth','sk')
-            AND status IN ('active','pending')
+            AND role = 'youth'
+            AND status = 'active'
+            AND verified = 1
           ORDER BY name ASC"
     );
     $stmt->execute(['bgy' => $barangayId]);
@@ -65,6 +66,7 @@ function sked_sk_officials_for_barangay(int $barangayId, bool $includeInactive =
     $whereStatus = $includeInactive ? '' : " AND so.status = 'active'";
     $stmt = sked_db()->prepare(
         "SELECT so.*, u.username, u.role AS account_role, u.status AS account_status, u.verified,
+                u.name AS account_name, u.mobile AS account_mobile,
                 COALESCE(a.total_meetings, 0) AS total_meetings,
                 COALESCE(a.present_count, 0) AS present_count,
                 COALESCE(a.absent_count, 0) AS absent_count,
@@ -112,8 +114,9 @@ function sked_sk_official_user_in_scope(int $userId, int $barangayId): ?array
            FROM users
           WHERE id = :id
             AND barangay_id = :bgy
-            AND role IN ('youth','sk')
-            AND status IN ('active','pending')
+            AND role = 'youth'
+            AND status = 'active'
+            AND verified = 1
           LIMIT 1"
     );
     $stmt->execute(['id' => $userId, 'bgy' => $barangayId]);
@@ -130,7 +133,7 @@ function sked_sk_official_save(int $barangayId, int $actorId, array $data): arra
     $officialId = (int) ($data['official_id'] ?? 0);
     $userId = (int) ($data['user_id'] ?? 0);
     $position = trim((string) ($data['position'] ?? ''));
-    $fullName = trim((string) ($data['full_name'] ?? ''));
+    $fullName = '';
     $committee = trim((string) ($data['committee'] ?? ''));
     $contactNo = trim((string) ($data['contact_no'] ?? ''));
     $status = trim((string) ($data['status'] ?? 'active'));
@@ -144,6 +147,9 @@ function sked_sk_official_save(int $barangayId, int $actorId, array $data): arra
     if (!in_array($status, ['active', 'inactive'], true)) {
         $errors[] = 'Invalid official status.';
     }
+    if ($userId <= 0) {
+        $errors[] = 'Select the verified youth account for this SK member.';
+    }
     if ($termStart !== '' && DateTime::createFromFormat('!Y-m-d', $termStart) === false) {
         $errors[] = 'Invalid term start date.';
     }
@@ -151,18 +157,12 @@ function sked_sk_official_save(int $barangayId, int $actorId, array $data): arra
         $errors[] = 'Invalid term end date.';
     }
 
-    if ($userId > 0) {
-        $user = sked_sk_official_user_in_scope($userId, $barangayId);
-        if ($user === null) {
-            $errors[] = 'Selected account is not a youth/community account in your barangay.';
-        } else {
-            $fullName = $fullName !== '' ? $fullName : (string) $user['name'];
-            $contactNo = $contactNo !== '' ? $contactNo : (string) ($user['mobile'] ?? '');
-        }
-    }
-
-    if ($fullName === '') {
-        $errors[] = 'Official name is required.';
+    $user = $userId > 0 ? sked_sk_official_user_in_scope($userId, $barangayId) : null;
+    if ($userId > 0 && $user === null) {
+        $errors[] = 'Selected account must be an active, verified youth account in your barangay.';
+    } elseif ($user !== null) {
+        $fullName = (string) $user['name'];
+        $contactNo = $contactNo !== '' ? $contactNo : (string) ($user['mobile'] ?? '');
     }
     if ($contactNo !== '' && !preg_match('/^[0-9+\-\s()]{7,30}$/', $contactNo)) {
         $errors[] = 'Please enter a valid contact number.';
@@ -170,6 +170,19 @@ function sked_sk_official_save(int $barangayId, int $actorId, array $data): arra
 
     if ($officialId > 0 && sked_sk_official_get($officialId, $barangayId) === null) {
         $errors[] = 'Official record not found.';
+    }
+    if ($userId > 0) {
+        $duplicateStmt = sked_db()->prepare(
+            'SELECT COUNT(*)
+               FROM sk_officials
+              WHERE barangay_id = :bgy
+                AND user_id = :user_id
+                AND id <> :id'
+        );
+        $duplicateStmt->execute(['bgy' => $barangayId, 'user_id' => $userId, 'id' => $officialId]);
+        if ((int) $duplicateStmt->fetchColumn() > 0) {
+            $errors[] = 'That verified youth account is already declared as an SK member.';
+        }
     }
 
     if (!empty($errors)) {
@@ -225,6 +238,23 @@ function sked_sk_official_set_status(int $officialId, int $barangayId, string $s
 {
     if (!in_array($status, ['active', 'inactive'], true)) {
         return ['ok' => false, 'errors' => ['Invalid official status.']];
+    }
+    if ($status === 'active') {
+        $checkStmt = sked_db()->prepare(
+            "SELECT so.id
+               FROM sk_officials so
+               JOIN users u ON u.id = so.user_id
+              WHERE so.id = :id
+                AND so.barangay_id = :bgy
+                AND u.role = 'youth'
+                AND u.status = 'active'
+                AND u.verified = 1
+              LIMIT 1"
+        );
+        $checkStmt->execute(['id' => $officialId, 'bgy' => $barangayId]);
+        if ($checkStmt->fetch() === false) {
+            return ['ok' => false, 'errors' => ['This SK member needs a fully verified youth account before being activated.']];
+        }
     }
 
     $stmt = sked_db()->prepare('UPDATE sk_officials SET status = :status WHERE id = :id AND barangay_id = :bgy');

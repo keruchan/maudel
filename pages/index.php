@@ -50,17 +50,24 @@ if (!empty($_SESSION['id']) && !empty($_SESSION['role'])) {
 $isAuthenticated = $viewerDashboardPath !== null;
 $primaryCtaHref = $isAuthenticated ? $viewerDashboardPath : 'auth/login.php';
 $primaryRegisterHref = $isAuthenticated ? $viewerDashboardPath : 'auth/register.php';
+$viewerRole = $isAuthenticated ? (string) ($_SESSION['role'] ?? '') : '';
 
 // Feed = real announcements merged with published events, scoped to what
-// this viewer may see: anonymous / non-youth visitors get municipal-wide
-// posts only; a logged-in youth also sees their own barangay's posts and
-// any inter-barangay posts that include it (same eligibility rule as the
-// youth Browse Events page). See sked_public_announcements() in
-// includes/events.php for the merge/eligibility logic.
-$viewerBarangayId = ($isAuthenticated && (string) ($_SESSION['role'] ?? '') === 'youth' && !empty($_SESSION['barangay_id']))
+// this viewer may see: anonymous visitors get municipal-wide posts only.
+// A logged-in youth or SK also sees their own barangay's posts and any
+// inter-barangay posts that include it (same eligibility rule as the youth
+// Browse Events page — SK just passes their own session barangay_id, same
+// as youth). PPSK has no single barangay (their scope is federation-wide,
+// see sked_allowed_scopes_for_role()), so instead of one barangay id they
+// get every inter-barangay post regardless of which barangays it targets,
+// via $includeAllInterbarangay. DILG is left as municipal-only for now —
+// not asked for, and there's no single barangay to scope them to either.
+// See sked_public_announcements() in includes/events.php for the merge.
+$viewerBarangayId = ($isAuthenticated && in_array($viewerRole, ['youth', 'sk'], true) && !empty($_SESSION['barangay_id']))
     ? (int) $_SESSION['barangay_id']
     : null;
-$feedItems = sked_public_announcements($viewerBarangayId, 6);
+$includeAllInterbarangay = ($isAuthenticated && $viewerRole === 'ppsk');
+$feedItems = sked_public_announcements($viewerBarangayId, 6, $includeAllInterbarangay);
 
 $scopeLabels = ['barangay' => 'Barangay Post', 'interbarangay' => 'Inter-Barangay', 'municipal' => 'Municipal-Wide'];
 $announcements = [];
@@ -74,10 +81,14 @@ foreach ($feedItems as $item) {
     }
 
     if ($isAnnouncement) {
+        // No "inside account" destination exists for an announcement (youth
+        // have no announcements page, and an official may not even manage
+        // this specific one if it's out of their scope) — so, per product
+        // decision, announcement cards are informational only, not clickable.
         $schedule = !empty($item['pinned']) ? 'Pinned' : null;
         $body = (string) $item['content'];
         $imageUrl = sked_announcement_image_url($item, 'public/announcement_image.php');
-        $detailUrl = 'public/announcement.php?id=' . (int) $item['id'];
+        $detailUrl = '';
     } else {
         $schedule = $item['event_date'] ? date('F j, Y', strtotime((string) $item['event_date'])) : 'Date TBA';
         if (!empty($item['start_time'])) {
@@ -85,7 +96,25 @@ foreach ($feedItems as $item) {
         }
         $body = !empty($item['description']) ? (string) $item['description'] : 'See your SK for details on this event.';
         $imageUrl = sked_event_image_url($item, 'public/event_image.php');
-        $detailUrl = 'public/event.php?t=' . rawurlencode((string) $item['share_token']);
+        // Route "inside the account" when signed in — officials land straight
+        // on this event's own manage/roster page, youth land on Browse Events
+        // auto-scrolled + filtered to it. Anonymous visitors have no account
+        // to route into, so they keep the public no-login share page. An
+        // official only gets the manage link for events they can actually
+        // manage (sked_can_manage_event) — e.g. an SK viewer's landing feed
+        // is municipal-scope only (same eligibility rule as an anonymous
+        // visitor, see $viewerBarangayId above), which SK never has rights
+        // to manage, so that case correctly falls through to the public page
+        // instead of a dead-end redirect.
+        $officialCanManage = in_array($viewerRole, ['sk', 'ppsk', 'dilg'], true)
+            && sked_can_manage_event($viewerRole, isset($_SESSION['barangay_id']) ? (int) $_SESSION['barangay_id'] : null, $item);
+        if ($officialCanManage) {
+            $detailUrl = 'manage/event.php?id=' . (int) $item['id'];
+        } elseif ($viewerRole === 'youth') {
+            $detailUrl = 'youth/events.php?highlight=' . (int) $item['id'];
+        } else {
+            $detailUrl = 'public/event.php?t=' . rawurlencode((string) $item['share_token']);
+        }
     }
 
     $announcements[] = [
@@ -1111,7 +1140,7 @@ if ($geoBarangayView) {
       height:100%;
       min-height:370px;
       display:block;
-      object-fit:cover;
+      object-fit:contain;
     }
     .announce-media-placeholder{
       height:100%;
@@ -1403,8 +1432,9 @@ if ($geoBarangayView) {
         <div id="announceCarousel" class="carousel slide announce-carousel" data-bs-ride="carousel" data-bs-interval="7000" data-aos="fade-up">
           <div class="carousel-inner">
             <?php foreach ($announcements as $index => $announcement): ?>
+              <?php $isLinked = $announcement['url'] !== ''; $slideTag = $isLinked ? 'a' : 'div'; ?>
               <div class="carousel-item <?php echo $index === 0 ? 'active' : ''; ?>">
-                <a class="announce-slide" href="<?php echo e($announcement['url']); ?>">
+                <<?php echo $slideTag; ?> class="announce-slide"<?php echo $isLinked ? ' href="' . e($announcement['url']) . '"' : ''; ?>>
                   <div class="announce-rail">
                     <div>
                       <div class="announce-index"><?php echo str_pad((string) ($index + 1), 2, '0', STR_PAD_LEFT); ?></div>
@@ -1430,7 +1460,7 @@ if ($geoBarangayView) {
                     <h3 class="announce-title"><?php echo e($announcement['title']); ?></h3>
                     <p class="announce-body"><?php echo e($announcement['body']); ?></p>
                   </div>
-                </a>
+                </<?php echo $slideTag; ?>>
               </div>
             <?php endforeach; ?>
           </div>

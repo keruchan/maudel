@@ -52,7 +52,7 @@ function render_sked_notification_bell(string $placement): void
         . '</div>'
         . '</div>';
 
-    echo '<script src="../../js/notifications.js?v=2" defer></script>';
+    echo '<script src="../../js/notifications.js?v=3" defer></script>';
 }
 
 /**
@@ -77,7 +77,6 @@ function sked_navigation_items_for_role(string $role): array
                 ['key' => 'youth_profiles', 'section' => 'Youth Data', 'href' => '../manage/youth_profiles.php', 'icon' => 'bi-people', 'label' => 'Youth Profiles'],
                 ['key' => 'events', 'section' => 'Programs', 'href' => 'events.php', 'icon' => 'bi-calendar-event', 'label' => 'Programs & Events'],
                 ['key' => 'announcements', 'section' => 'Programs', 'href' => '../manage/announcements.php', 'icon' => 'bi-megaphone', 'label' => 'Announcements'],
-                ['key' => 'scan_attendance', 'section' => 'Programs', 'href' => '../manage/scan.php', 'icon' => 'bi-upc-scan', 'label' => 'Scan Attendance'],
                 ['key' => 'plans', 'section' => 'Programs', 'href' => 'plans.php', 'icon' => 'bi-clipboard-data', 'label' => 'Youth Development Plans'],
                 ['key' => 'analytics', 'section' => 'Insights', 'href' => 'analytics.php', 'icon' => 'bi-bar-chart-line', 'label' => 'Analytics'],
                 ['key' => 'reports', 'section' => 'Insights', 'href' => 'reports.php', 'icon' => 'bi-file-earmark-bar-graph', 'label' => 'Reports'],
@@ -133,6 +132,7 @@ function sked_navigation_items_for_role(string $role): array
                 ['key' => 'self_checkin', 'section' => 'Events', 'href' => 'scan.php', 'icon' => 'bi-upc-scan', 'label' => 'Self Check-in'],
                 ['key' => 'polls', 'section' => 'Community', 'href' => 'polls.php', 'icon' => 'bi-bar-chart-steps', 'label' => 'Community Polls'],
                 ['key' => 'feedback', 'section' => 'Community', 'href' => 'feedback.php', 'icon' => 'bi-chat-left-text', 'label' => 'Feedback / Concerns'],
+                ['key' => 'full_disclosure', 'section' => 'Community', 'href' => 'full_disclosure.php', 'icon' => 'bi-clipboard-data', 'label' => 'Full Disclosure Board'],
                 ['key' => 'profile', 'section' => 'Account', 'href' => 'activity.php', 'icon' => 'bi-person-circle', 'label' => 'Profile'],
                 ['key' => 'account_settings', 'section' => 'Account', 'href' => '../account/settings.php', 'icon' => 'bi-gear', 'label' => 'Account Settings'],
             ];

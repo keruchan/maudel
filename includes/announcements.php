@@ -359,15 +359,16 @@ function sked_delete_announcement(int $announcementId): array
  * landing-page feed. Same eligibility rule as sked_public_announcements()'s
  * existing events query (includes/events.php), applied to `announcements`.
  */
-function sked_published_announcements_for_feed(?int $viewerBarangayId, int $limit = 6): array
+function sked_published_announcements_for_feed(?int $viewerBarangayId, int $limit = 6, bool $includeAllInterbarangay = false): array
 {
     $pdo = sked_db();
     $limit = max(1, $limit);
 
     if ($viewerBarangayId === null || $viewerBarangayId <= 0) {
+        $scopeSql = $includeAllInterbarangay ? "scope IN ('municipal','interbarangay')" : "scope = 'municipal'";
         $stmt = $pdo->prepare(
             "SELECT * FROM announcements
-              WHERE status = 'published' AND scope = 'municipal'
+              WHERE status = 'published' AND {$scopeSql}
               ORDER BY pinned DESC, created_at DESC
               LIMIT " . (int) $limit
         );

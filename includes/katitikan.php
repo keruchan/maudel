@@ -43,16 +43,32 @@ function sked_format_time_filipino(?string $time): string
 }
 
 /** Create a new Katitikan shell for the creator's barangay. SK-only. */
+function sked_katitikan_next_session_no(int $barangayId, int $seriesYear): string
+{
+    if ($barangayId <= 0 || $seriesYear < 2020 || $seriesYear > 2100) {
+        return '001';
+    }
+
+    $stmt = sked_db()->prepare('SELECT session_no FROM katitikan WHERE barangay_id = :bgy AND series_year = :year');
+    $stmt->execute(['bgy' => $barangayId, 'year' => $seriesYear]);
+
+    $max = 0;
+    foreach ($stmt->fetchAll() as $row) {
+        $sessionNo = trim((string) ($row['session_no'] ?? ''));
+        if ($sessionNo !== '' && ctype_digit($sessionNo)) {
+            $max = max($max, (int) $sessionNo);
+        }
+    }
+
+    return str_pad((string) ($max + 1), 3, '0', STR_PAD_LEFT);
+}
+
 function sked_katitikan_create(array $creator, array $data): array
 {
     $barangayId = (int) ($creator['barangay_id'] ?? 0);
     $errors = [];
     if ($barangayId <= 0) {
         $errors[] = 'Your account is not assigned to a barangay.';
-    }
-    $sessionNo = trim((string) ($data['session_no'] ?? ''));
-    if ($sessionNo === '') {
-        $errors[] = 'Session number is required.';
     }
     $seriesYear = (int) ($data['series_year'] ?? 0);
     if ($seriesYear < 2020 || $seriesYear > 2100) {
@@ -71,6 +87,8 @@ function sked_katitikan_create(array $creator, array $data): array
     if (!empty($errors)) {
         return ['ok' => false, 'errors' => $errors];
     }
+
+    $sessionNo = sked_katitikan_next_session_no($barangayId, $seriesYear);
 
     try {
         $stmt = sked_db()->prepare(
@@ -95,7 +113,7 @@ function sked_katitikan_create(array $creator, array $data): array
         ]);
     } catch (PDOException $e) {
         if ($e->getCode() === '23000') {
-            return ['ok' => false, 'errors' => ["Session No. {$sessionNo}, Series of {$seriesYear} already exists for your barangay."]];
+            return ['ok' => false, 'errors' => ["Session No. {$sessionNo}, Series of {$seriesYear} was already used. Please submit again to get the next available number."]];
         }
         throw $e;
     }
@@ -293,6 +311,81 @@ function sked_katitikan_add_official_attendees(int $id, int $actorBarangayId, ar
     }
 
     return ['ok' => true, 'errors' => [], 'added' => $added, 'skipped' => $skipped];
+}
+
+/**
+ * Save roster roll call in one pass: checked officials are present, every
+ * other active roster official is absent.
+ */
+function sked_katitikan_save_roster_attendance(int $id, int $actorBarangayId, array $presentOfficialIds): array
+{
+    if (sked_katitikan_get($id, $actorBarangayId) === null) {
+        return ['ok' => false, 'errors' => ['Record not found.']];
+    }
+
+    $officials = sked_sk_officials_for_barangay($actorBarangayId);
+    if (empty($officials)) {
+        return ['ok' => false, 'errors' => ['Add active SK members before saving attendance.']];
+    }
+
+    $presentSet = array_fill_keys(array_values(array_unique(array_filter(array_map('intval', $presentOfficialIds), static fn($v) => $v > 0))), true);
+
+    $existingStmt = sked_db()->prepare(
+        'SELECT id, sk_official_id
+           FROM katitikan_attendees
+          WHERE katitikan_id = :k
+            AND sk_official_id IS NOT NULL'
+    );
+    $existingStmt->execute(['k' => $id]);
+    $existingByOfficial = [];
+    foreach ($existingStmt->fetchAll() as $row) {
+        $existingByOfficial[(int) $row['sk_official_id']] = (int) $row['id'];
+    }
+
+    $orderStmt = sked_db()->prepare('SELECT COALESCE(MAX(sort_order), -1) + 1 FROM katitikan_attendees WHERE katitikan_id = :k');
+    $orderStmt->execute(['k' => $id]);
+    $nextOrder = (int) $orderStmt->fetchColumn();
+
+    $updateStmt = sked_db()->prepare(
+        'UPDATE katitikan_attendees
+            SET name = :name, designation = :designation, attendance_status = :status
+          WHERE id = :id'
+    );
+    $insertStmt = sked_db()->prepare(
+        'INSERT INTO katitikan_attendees (katitikan_id, sk_official_id, name, designation, attendance_status, sort_order)
+         VALUES (:k, :official_id, :name, :designation, :status, :order)'
+    );
+
+    $presentCount = 0;
+    $absentCount = 0;
+    foreach ($officials as $official) {
+        $officialId = (int) $official['id'];
+        $status = isset($presentSet[$officialId]) ? 'present' : 'absent';
+        if ($status === 'present') {
+            $presentCount++;
+        } else {
+            $absentCount++;
+        }
+
+        $params = [
+            'name' => (string) $official['full_name'],
+            'designation' => (string) $official['position'],
+            'status' => $status,
+        ];
+
+        if (isset($existingByOfficial[$officialId])) {
+            $updateStmt->execute($params + ['id' => $existingByOfficial[$officialId]]);
+            continue;
+        }
+
+        $insertStmt->execute($params + [
+            'k' => $id,
+            'official_id' => $officialId,
+            'order' => $nextOrder++,
+        ]);
+    }
+
+    return ['ok' => true, 'errors' => [], 'present' => $presentCount, 'absent' => $absentCount];
 }
 
 /** Remove an attendee row. Barangay-scoped. */

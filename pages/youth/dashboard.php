@@ -236,6 +236,13 @@ $openPollsCount = ($isVerified && $barangayId > 0) ? count(sked_open_polls_for_y
                             </div>
                             <span class="count-badge tabular"><?php echo (int) $myOpenFeedbackCount; ?> open</span>
                         </a>
+                        <a class="docket-row text-reset text-decoration-none" href="full_disclosure.php">
+                            <div>
+                                <div class="docket-title">Full Disclosure Board <i class="bi bi-arrow-right small text-secondary"></i></div>
+                                <div class="docket-sub">Finalized CBYDP and ABYIP documents for your barangay</div>
+                            </div>
+                            <span class="count-badge tabular">Public</span>
+                        </a>
                     </div>
                 </div>
 

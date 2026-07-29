@@ -190,13 +190,17 @@ function sked_escalate_to_dilg(array $ppsk, int $skUserId): array
 /**
  * DILG processes a pending dismissal recommendation: reverts the SK to
  * Youth (sked_retire_official) and marks the recommendation reviewed.
+ * Allowed from 'submitted' (straight to dismissal) OR 'rework' (DILG asked
+ * for an explanation first, then decided to dismiss anyway) — but NOT from
+ * a terminal state ('reviewed'/'complied'/'rejected'), so a case can't be
+ * processed twice.
  *
  * @return array{ok:bool,error?:string,badge?:string}
  */
 function sked_process_dismissal(int $dilgUserId, int $reportId): array
 {
     $report = sked_get_report($reportId);
-    if ($report === null || $report['type'] !== 'dismissal_recommendation' || $report['status'] !== 'submitted') {
+    if ($report === null || $report['type'] !== 'dismissal_recommendation' || !in_array($report['status'], ['submitted', 'rework'], true)) {
         return ['ok' => false, 'error' => 'This recommendation is no longer pending.'];
     }
 
@@ -209,8 +213,109 @@ function sked_process_dismissal(int $dilgUserId, int $reportId): array
     );
 
     if ($result['ok']) {
-        sked_mark_report_reviewed($reportId, $dilgUserId);
+        sked_ensure_report_review_schema();
+        $stmt = sked_db()->prepare(
+            "UPDATE reports SET status = 'reviewed', reviewed_at = NOW(), reviewed_by = :r WHERE id = :id AND status IN ('submitted', 'rework')"
+        );
+        $stmt->execute(['r' => $dilgUserId, 'id' => $reportId]);
     }
 
     return $result;
+}
+
+/**
+ * DILG asks the SK to explain before deciding on dismissal — a due-process
+ * step between "escalated" and "dismissed". Reuses the generic
+ * sked_review_report() for the actual 'rework' transition (DB update +
+ * PPSK notification + audit, same machinery pages/dilg/reports.php already
+ * uses for other report types), then ALSO notifies the SK directly — the
+ * generic function only notifies whoever submitted the report (PPSK here),
+ * but the person who actually needs to explain themselves is the SK being
+ * recommended for dismissal (report.ref_user_id), so they need their own
+ * notice too.
+ *
+ * @return array{ok:bool,error?:string}
+ */
+function sked_request_dismissal_explanation(int $dilgUserId, int $reportId, string $message): array
+{
+    $report = sked_get_report($reportId);
+    if ($report === null || $report['type'] !== 'dismissal_recommendation') {
+        return ['ok' => false, 'error' => 'Dismissal recommendation not found.'];
+    }
+
+    $r = sked_review_report($reportId, $dilgUserId, 'rework', $message);
+    if (!$r['ok']) {
+        return $r;
+    }
+
+    $skUserId = (int) ($report['ref_user_id'] ?? 0);
+    if ($skUserId > 0) {
+        sked_notify(
+            $skUserId,
+            'compliance',
+            'DILG is requesting an explanation',
+            'DILG has asked you to explain the compliance strikes behind a dismissal recommendation before any decision is made. '
+                . 'Please coordinate with your PPSK and DILG. Message: ' . trim($message),
+            '../sk/reports.php'
+        );
+    }
+
+    return $r;
+}
+
+/**
+ * DILG closes a dismissal case WITHOUT dismissing the SK — they explained
+ * satisfactorily / complied. Resets the SK's compliance strikes so they are
+ * not immediately re-eligible for escalation on the same old strikes (a
+ * fresh 3 strikes would need to accumulate again before this can recur) —
+ * that reset is the concrete mechanism behind "not subject for dismissal
+ * again". Allowed from 'submitted' (closed without ever requesting an
+ * explanation) or 'rework' (explanation was given and accepted).
+ *
+ * @return array{ok:bool,error?:string}
+ */
+function sked_mark_dismissal_complied(int $dilgUserId, int $reportId, string $comments = ''): array
+{
+    $report = sked_get_report($reportId);
+    if ($report === null || $report['type'] !== 'dismissal_recommendation' || !in_array($report['status'], ['submitted', 'rework'], true)) {
+        return ['ok' => false, 'error' => 'This recommendation is no longer pending.'];
+    }
+
+    sked_ensure_report_review_schema();
+    $comments = trim($comments);
+    $stmt = sked_db()->prepare(
+        "UPDATE reports SET status = 'complied', reviewed_at = NOW(), reviewed_by = :r, review_comments = :c
+          WHERE id = :id AND status IN ('submitted', 'rework')"
+    );
+    $stmt->execute(['r' => $dilgUserId, 'c' => $comments !== '' ? $comments : null, 'id' => $reportId]);
+    if ($stmt->rowCount() <= 0) {
+        return ['ok' => false, 'error' => 'This recommendation is no longer pending.'];
+    }
+
+    $skUserId = (int) ($report['ref_user_id'] ?? 0);
+    if ($skUserId > 0) {
+        sked_db()->prepare('DELETE FROM sk_strikes WHERE sk_user_id = :id')->execute(['id' => $skUserId]);
+        sked_notify(
+            $skUserId,
+            'compliance',
+            'Dismissal case closed — you are no longer subject for dismissal',
+            'DILG reviewed your case and closed it without dismissal. Your compliance strikes have been cleared.'
+                . ($comments !== '' ? ' Notes: ' . $comments : ''),
+            '../sk/reports.php'
+        );
+    }
+
+    $ppskRows = sked_db()->query("SELECT id FROM users WHERE role = 'ppsk' AND status = 'active'")->fetchAll();
+    foreach ($ppskRows as $p) {
+        sked_notify(
+            (int) $p['id'],
+            'compliance',
+            'Dismissal case resolved without dismissal',
+            (string) ($report['title'] ?? 'A dismissal recommendation') . ' was closed by DILG — the SK complied and strikes were cleared.',
+            '../ppsk/compliance.php'
+        );
+    }
+
+    sked_audit($dilgUserId, 'dismissal_case_complied', 'report', $reportId, $comments !== '' ? $comments : 'Complied — strikes cleared');
+    return ['ok' => true];
 }

@@ -13,6 +13,8 @@
  * point of this page: the spec asks for the reverse flow to be used only
  * when the first way fails, so it is opt-in per event rather than always
  * live, and every self-scan is recorded with its method for auditing.
+ *
+ * DILG does NOT get this page — see the same note in pages/manage/scan.php.
  * ============================================================
  */
 
@@ -23,7 +25,7 @@ require_once __DIR__ . '/../../includes/view.php';
 require_once __DIR__ . '/../../includes/barangays.php';
 require_once __DIR__ . '/../../includes/attendance.php';
 
-require_roles(['sk', 'ppsk', 'dilg']);
+require_roles(['sk', 'ppsk']);
 
 $role = (string) $_SESSION['role'];
 $userId = (int) $_SESSION['id'];

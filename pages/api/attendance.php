@@ -7,7 +7,7 @@
  *            Called by js/qr-attendance.js as codes are decoded, so the
  *            scanner never has to reload between people in the queue.
  *
- *   POST action=officer_scan  (sk/ppsk/dilg) event_id, payload
+ *   POST action=officer_scan  (sk/ppsk — not dilg, view-only) event_id, payload
  *        -> resolves a youth QR / typed KK ID and marks them present
  *   POST action=self_scan     (youth)        payload
  *        -> resolves an event QR and marks the caller present
@@ -53,7 +53,9 @@ if ($payload === '' || mb_strlen($payload) > 300) {
 }
 
 if ($action === 'officer_scan') {
-    if (!in_array($role, ['sk', 'ppsk', 'dilg'], true)) {
+    // DILG has view-only access to events — no attendance-taking. See the
+    // matching notes in pages/manage/scan.php and pages/manage/event.php.
+    if (!in_array($role, ['sk', 'ppsk'], true)) {
         http_response_code(403);
         echo json_encode(['ok' => false, 'result' => 'rejected', 'message' => 'Officials only.']);
         exit;

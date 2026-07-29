@@ -20,7 +20,7 @@ require_once __DIR__ . '/../../includes/profiling.php';
 require_once __DIR__ . '/../../includes/abyip.php';
 require_once __DIR__ . '/../../includes/plan_uploads.php';
 
-require_roles(['sk', 'ppsk', 'dilg']);
+require_roles(['sk', 'ppsk', 'dilg', 'youth']);
 
 $role = (string) $_SESSION['role'];
 $userId = (int) $_SESSION['id'];
@@ -35,7 +35,7 @@ sked_form_retain(($flash['type'] ?? '') === 'danger');
 
 $plan = sked_abyip_get($planId);
 if ($plan === null) {
-    header('Location: ' . ($role === 'sk' ? 'abyip.php' : 'dashboard.php'));
+    header('Location: ' . ($role === 'sk' ? 'abyip.php' : ($role === 'youth' ? '../youth/full_disclosure.php' : 'dashboard.php')));
     exit;
 }
 $isEditable = $role === 'sk' && (int) $plan['barangay_id'] === $sessionBarangayId;
@@ -43,6 +43,16 @@ if ($role === 'sk' && !$isEditable) {
     header('Location: abyip.php');
     exit;
 }
+if ($role === 'youth' && ((int) $plan['barangay_id'] !== $sessionBarangayId || (string) $plan['status'] !== 'finalized')) {
+    header('Location: ../youth/full_disclosure.php');
+    exit;
+}
+$activeNav = $role === 'youth' ? 'full_disclosure' : 'abyip';
+$backHref = match ($role) {
+    'sk' => 'abyip.php',
+    'youth' => '../youth/full_disclosure.php',
+    default => 'dashboard.php',
+};
 
 $flash = ['type' => '', 'msg' => ''];
 if (empty($_SESSION['csrf_abyipplan_token'])) {
@@ -96,7 +106,7 @@ $totals = sked_abyip_total_budget($plan);
 <body>
     <a href="#main-content" class="skip-link">Skip to main content</a>
     <div class="app-shell">
-        <?php render_sked_navigation($role, 'abyip', $linkBase); ?>
+        <?php render_sked_navigation($role, $activeNav, $linkBase); ?>
         <main class="main" id="main-content">
             <section class="page-header mb-4">
                 <div class="seal-watermark" aria-hidden="true"></div>
@@ -115,7 +125,7 @@ $totals = sked_abyip_total_budget($plan);
                         <?php render_sked_notification_bell('header'); ?><span class="officer-chip">
                             <span class="avatar-dot"><?php echo e(strtoupper(substr($displayName, 0, 1))); ?></span><?php echo e($displayName); ?>
                         </span>
-                        <a class="btn-logout-outline text-decoration-none" href="<?php echo e($role === 'sk' ? 'abyip.php' : 'dashboard.php'); ?>"><i class="bi bi-arrow-left me-1"></i> Back</a>
+                        <a class="btn-logout-outline text-decoration-none" href="<?php echo e($backHref); ?>"><i class="bi bi-arrow-left me-1"></i> Back</a>
                     </div>
                 </div>
                 <svg class="ridge-divider" viewBox="0 0 1200 20" preserveAspectRatio="none" aria-hidden="true"><path d="M0 14 Q150 2 300 12 T600 10 T900 13 T1200 8" fill="none" stroke="#818cf8" stroke-width="2"/></svg>

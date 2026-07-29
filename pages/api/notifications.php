@@ -10,6 +10,7 @@
  *   GET                       -> {unread_count, notifications: [...]}
  *   POST action=mark_all      -> marks all read, returns the same shape
  *   POST action=mark_one&id=N -> marks one read (scoped to the caller), same shape
+ *   POST action=delete_one&id=N -> deletes one notification (scoped), same shape
  *
  * Requires an active session (any role) — no CSRF cookie/GET reads happen
  * without one; POST additionally requires the csrf_notif_token embedded in
@@ -55,6 +56,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         sked_mark_all_read($userId);
     } elseif ($action === 'mark_one') {
         sked_mark_notification_read($userId, (int) ($_POST['id'] ?? 0));
+    } elseif ($action === 'delete_one') {
+        sked_delete_notification($userId, (int) ($_POST['id'] ?? 0));
     }
 }
 

@@ -54,6 +54,8 @@ $ownSubmissions = array_values(array_filter(
     $submittedToDilg,
     static fn($r) => in_array($r['type'], ['interbarangay', 'minutes'], true) && (int) $r['submitted_by'] === $ppskUserId
 ));
+$pendingCount = count(array_filter($ownSubmissions, static fn ($r) => $r['status'] === 'submitted'));
+$acknowledgedCount = count(array_filter($ownSubmissions, static fn ($r) => $r['status'] === 'reviewed'));
 ?>
 <!doctype html>
 <html lang="en">
@@ -93,8 +95,41 @@ $ownSubmissions = array_values(array_filter(
 
             <?php if ($flash['msg'] !== ''): ?><div class="alert alert-<?php echo e($flash['type']); ?>" role="alert"><?php echo $flash['msg']; ?></div><?php endif; ?>
 
-            <div class="row g-4 mb-4">
-                <div class="col-lg-7 mx-auto">
+            <section class="row g-3 mb-4">
+                <div class="col-sm-4">
+                    <div class="ledger-card <?php echo $pendingCount > 0 ? 'accent-amber' : 'accent-teal'; ?>">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <span class="ledger-icon"><i class="bi bi-hourglass-split"></i></span>
+                            <span class="ledger-tag">Pending</span>
+                        </div>
+                        <div class="ledger-value tabular"><?php echo $pendingCount; ?></div>
+                        <div class="ledger-caption">Awaiting DILG acknowledgement</div>
+                    </div>
+                </div>
+                <div class="col-sm-4">
+                    <div class="ledger-card accent-teal">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <span class="ledger-icon"><i class="bi bi-check-circle"></i></span>
+                            <span class="ledger-tag">Acknowledged</span>
+                        </div>
+                        <div class="ledger-value tabular"><?php echo $acknowledgedCount; ?></div>
+                        <div class="ledger-caption">Confirmed received by DILG</div>
+                    </div>
+                </div>
+                <div class="col-sm-4">
+                    <div class="ledger-card">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <span class="ledger-icon"><i class="bi bi-file-earmark-text"></i></span>
+                            <span class="ledger-tag">Submitted</span>
+                        </div>
+                        <div class="ledger-value tabular"><?php echo count($ownSubmissions); ?></div>
+                        <div class="ledger-caption">Reports on file, all time</div>
+                    </div>
+                </div>
+            </section>
+
+            <div class="row g-4">
+                <div class="col-lg-5">
                     <div class="docket-panel">
                         <div class="section-heading"><h2>Submit to DILG</h2></div>
                         <form method="post" action="reports.php" enctype="multipart/form-data" novalidate>
@@ -113,7 +148,7 @@ $ownSubmissions = array_values(array_filter(
                             </div>
                             <div class="mb-3">
                                 <label for="content" class="form-label">Content</label>
-                                <textarea class="form-control" id="content" name="content" rows="5" maxlength="4000"><?php echo e(sked_old('content')); ?></textarea>
+                                <textarea class="form-control" id="content" name="content" rows="5" maxlength="4000" placeholder="Activities, attendees, outcomes, concerns…"><?php echo e(sked_old('content')); ?></textarea>
                             </div>
                             <div class="mb-3">
                                 <label for="attachment" class="form-label">Attachment</label>
@@ -124,34 +159,36 @@ $ownSubmissions = array_values(array_filter(
                         </form>
                     </div>
                 </div>
-            </div>
 
-            <div class="docket-panel">
-                <div class="section-heading"><h2>Your Submissions to DILG</h2><span class="section-note"><?php echo count($ownSubmissions); ?> total</span></div>
-                <?php if (empty($ownSubmissions)): ?>
-                    <div class="text-center text-secondary py-4"><i class="bi bi-send fs-1 d-block mb-2"></i>Nothing submitted yet.</div>
-                <?php else: ?>
-                    <?php foreach ($ownSubmissions as $r): ?>
-                        <div class="docket-row">
-                            <div>
-                                <div class="docket-title"><?php echo e((string) $r['title']); ?> <span class="badge text-bg-light"><?php echo e(sked_report_type_label((string) $r['type'])); ?></span></div>
-                                <div class="docket-sub"><?php echo e(date('M j, Y', strtotime((string) $r['submitted_at']))); ?></div>
-                            </div>
-                            <div class="d-flex align-items-center gap-2 flex-wrap justify-content-end">
-                                <span class="badge <?php echo e(sked_report_status_badge_class((string) $r['status'])); ?>"><?php echo e(sked_report_status_label((string) $r['status'])); ?></span>
-                                <div class="action-buttons">
-                                    <a href="../manage/report_export.php?id=<?php echo (int) $r['id']; ?>" class="btn btn-sm btn-outline-secondary" target="_blank" title="Export report"><i class="bi bi-printer"></i><span>Export</span></a>
-                                    <?php if (!empty($r['attachment_file_path'])): ?>
-                                        <a href="../manage/report_file.php?id=<?php echo (int) $r['id']; ?>" class="btn btn-sm btn-outline-secondary" target="_blank" title="Open attachment"><i class="bi bi-paperclip"></i><span>Attachment</span></a>
+                <div class="col-lg-7">
+                    <div class="docket-panel">
+                        <div class="section-heading"><h2>Submission History</h2><span class="section-note"><?php echo count($ownSubmissions); ?> total</span></div>
+                        <?php if (empty($ownSubmissions)): ?>
+                            <div class="text-center text-secondary py-4"><i class="bi bi-send fs-1 d-block mb-2"></i>Nothing submitted yet.</div>
+                        <?php else: ?>
+                            <?php foreach ($ownSubmissions as $r): ?>
+                                <div class="docket-row">
+                                    <div>
+                                        <div class="docket-title"><?php echo e((string) $r['title']); ?> <span class="badge text-bg-light"><?php echo e(sked_report_type_label((string) $r['type'])); ?></span></div>
+                                        <div class="docket-sub"><?php echo e(date('M j, Y', strtotime((string) $r['submitted_at']))); ?></div>
+                                    </div>
+                                    <div class="d-flex align-items-center gap-2 flex-wrap justify-content-end">
+                                        <span class="badge <?php echo e(sked_report_status_badge_class((string) $r['status'])); ?>"><?php echo e(sked_report_status_label((string) $r['status'])); ?></span>
+                                        <div class="action-buttons">
+                                            <a href="../manage/report_export.php?id=<?php echo (int) $r['id']; ?>" class="btn btn-sm btn-outline-secondary" target="_blank" title="Export report"><i class="bi bi-printer"></i><span>Export</span></a>
+                                            <?php if (!empty($r['attachment_file_path'])): ?>
+                                                <a href="../manage/report_file.php?id=<?php echo (int) $r['id']; ?>" class="btn btn-sm btn-outline-secondary" target="_blank" title="Open attachment"><i class="bi bi-paperclip"></i><span>Attachment</span></a>
+                                            <?php endif; ?>
+                                        </div>
+                                    </div>
+                                    <?php if (!empty($r['review_comments'])): ?>
+                                        <div class="small text-secondary mt-2 w-100"><strong>DILG comments:</strong> <?php echo nl2br(e((string) $r['review_comments'])); ?></div>
                                     <?php endif; ?>
                                 </div>
-                            </div>
-                            <?php if (!empty($r['review_comments'])): ?>
-                                <div class="small text-secondary mt-2 w-100"><strong>DILG comments:</strong> <?php echo nl2br(e((string) $r['review_comments'])); ?></div>
-                            <?php endif; ?>
-                        </div>
-                    <?php endforeach; ?>
-                <?php endif; ?>
+                            <?php endforeach; ?>
+                        <?php endif; ?>
+                    </div>
+                </div>
             </div>
         </main>
     </div>

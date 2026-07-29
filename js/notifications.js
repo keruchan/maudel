@@ -68,6 +68,11 @@
                                 '<span class="notif-when">' + escapeHtml(n.when) + '</span>' +
                             '</span>' +
                         '</button>' +
+                        '<span class="notif-item-actions">' +
+                            '<button type="button" class="notif-action notif-action-delete" data-notif-delete data-id="' + n.id + '" title="Delete notification" aria-label="Delete notification">' +
+                                '<i class="bi bi-trash"></i>' +
+                            '</button>' +
+                        '</span>' +
                     '</div>'
                 );
             }).join('');
@@ -81,6 +86,13 @@
                             window.location.href = link;
                         }
                     });
+                });
+            });
+
+            Array.prototype.forEach.call(list.querySelectorAll('[data-notif-delete]'), function (btn) {
+                btn.addEventListener('click', function (e) {
+                    e.stopPropagation();
+                    deleteOne(btn.getAttribute('data-id'));
                 });
             });
         }
@@ -128,6 +140,14 @@
             return postAction('mark_one', { id: id }).then(function (data) {
                 if (!data) { return; }
                 setBadge(data.unread_count || 0);
+            });
+        }
+
+        function deleteOne(id) {
+            return postAction('delete_one', { id: id }).then(function (data) {
+                if (!data) { return; }
+                setBadge(data.unread_count || 0);
+                renderList(data.notifications || []);
             });
         }
 

@@ -42,13 +42,29 @@ function sked_report_type_label(string $type): string
     };
 }
 
-/** Display label for a report's status, independent of the stored enum value. */
-function sked_report_status_label(string $status): string
+/**
+ * Display label for a report's status, independent of the stored enum
+ * value. 'rework' doubles as "awaiting explanation" for dismissal
+ * recommendations specifically (see sked_request_dismissal_explanation() in
+ * includes/compliance.php) — callers that need dismissal-specific copy use
+ * $isDismissal to get the more accurate label instead of the generic one.
+ */
+function sked_report_status_label(string $status, bool $isDismissal = false): string
 {
+    if ($isDismissal) {
+        return match ($status) {
+            'reviewed' => 'Dismissed',
+            'rework' => 'Awaiting Explanation',
+            'complied' => 'Complied — Not Dismissed',
+            'rejected' => 'Rejected',
+            default => 'Pending',
+        };
+    }
     return match ($status) {
         'reviewed' => 'Acknowledged',
         'rework' => 'For Rework',
         'rejected' => 'Rejected',
+        'complied' => 'Complied',
         default => 'Pending',
     };
 }
@@ -60,6 +76,7 @@ function sked_report_status_badge_class(string $status): string
         'reviewed' => 'text-bg-success',
         'rework' => 'text-bg-warning',
         'rejected' => 'text-bg-danger',
+        'complied' => 'text-bg-info',
         default => 'text-bg-secondary',
     };
 }
@@ -67,7 +84,7 @@ function sked_report_status_badge_class(string $status): string
 /** Storage values accepted for report review filters. */
 function sked_report_review_statuses(): array
 {
-    return ['submitted', 'reviewed', 'rework', 'rejected'];
+    return ['submitted', 'reviewed', 'rework', 'rejected', 'complied'];
 }
 
 /** Keep local installs aligned with the report review migration. */
@@ -79,7 +96,7 @@ function sked_ensure_report_review_schema(): void
     }
 
     $db = sked_db();
-    $db->exec("ALTER TABLE reports MODIFY COLUMN status ENUM('submitted','reviewed','rework','rejected') NOT NULL DEFAULT 'submitted'");
+    $db->exec("ALTER TABLE reports MODIFY COLUMN status ENUM('submitted','reviewed','rework','rejected','complied') NOT NULL DEFAULT 'submitted'");
     $db->exec('ALTER TABLE reports ADD COLUMN IF NOT EXISTS review_comments TEXT NULL AFTER reviewed_by');
     $done = true;
 }

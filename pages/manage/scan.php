@@ -14,6 +14,10 @@
  * the documented fallback when the camera is unavailable (e.g. the app is
  * being reached over plain http on a LAN address, where browsers withhold
  * getUserMedia entirely).
+ *
+ * DILG does NOT get this page — DILG's role on events/programs is
+ * oversight/viewing only, not taking attendance (see also pages/manage/
+ * event.php, which hides all mutating actions for role === 'dilg').
  * ============================================================
  */
 
@@ -24,7 +28,7 @@ require_once __DIR__ . '/../../includes/view.php';
 require_once __DIR__ . '/../../includes/barangays.php';
 require_once __DIR__ . '/../../includes/attendance.php';
 
-require_roles(['sk', 'ppsk', 'dilg']);
+require_roles(['sk', 'ppsk']);
 
 $role = (string) $_SESSION['role'];
 $userId = (int) $_SESSION['id'];

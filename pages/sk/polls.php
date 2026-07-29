@@ -27,6 +27,7 @@ $todayLabel = date('l, F j, Y');
 
 $flash = ['type' => '', 'msg' => ''];
 $formErrors = [];
+$reopenCreateModal = false;
 
 if (empty($_SESSION['csrf_polls_token'])) {
     $_SESSION['csrf_polls_token'] = bin2hex(random_bytes(32));
@@ -50,10 +51,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $flash = ['type' => 'success', 'msg' => 'Poll created' . (!empty($_POST['publish']) ? ' and published.' : ' as a draft.')];
         } else {
             $formErrors = $r['errors'];
-            sked_form_retain(true); // keep the question and options the SK typed
+            $reopenCreateModal = true;
         }
     }
 }
+
+sked_form_retain($reopenCreateModal); // keep the question and options when the create modal comes back with errors
 
 $polls = $barangayId > 0 ? sked_polls_for_barangay($barangayId) : [];
 $statusBadge = static fn(string $s) => ['draft' => 'secondary', 'open' => 'primary', 'closed' => 'dark'][$s] ?? 'secondary';
@@ -96,7 +99,10 @@ $pollCloseLabel = static function (array $poll): string {
                         <h1 class="page-title">Community Polls</h1>
                         <p class="text-secondary meta-copy mb-0">Ask your barangay youth for input — results feed program planning.</p>
                     </div>
-                    <div class="d-flex align-items-center gap-2">
+                    <div class="d-flex align-items-center justify-content-md-end gap-2 flex-wrap">
+                        <?php if ($barangayId > 0): ?>
+                            <button type="button" class="btn btn-sked" data-bs-toggle="modal" data-bs-target="#createPollModal"><i class="bi bi-plus-circle me-1"></i> Create Poll</button>
+                        <?php endif; ?>
                         <?php render_sked_notification_bell('header'); ?><span class="officer-chip">
                             <span class="avatar-dot"><?php echo e(strtoupper(substr($displayName, 0, 1))); ?></span><?php echo e($displayName); ?>
                         </span>
@@ -107,6 +113,73 @@ $pollCloseLabel = static function (array $poll): string {
             </section>
 
             <?php if ($flash['msg'] !== ''): ?><div class="alert alert-<?php echo e($flash['type']); ?>" role="alert"><?php echo $flash['msg']; ?></div><?php endif; ?>
+
+            <?php if ($barangayId > 0): ?>
+                <div class="modal fade" id="createPollModal" tabindex="-1" aria-labelledby="createPollModalLabel" aria-hidden="true"<?php echo $reopenCreateModal ? ' data-autoshow="1"' : ''; ?>>
+                    <div class="modal-dialog modal-lg modal-dialog-scrollable create-event-dialog">
+                        <div class="modal-content create-event-modal">
+                            <div class="modal-header">
+                                <div>
+                                    <div class="eyebrow mb-1">Barangay <?php echo e($barangayName !== '' ? $barangayName : 'Council'); ?></div>
+                                    <h2 class="modal-title h5" id="createPollModalLabel">Create Poll</h2>
+                                </div>
+                                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                            </div>
+                            <form class="create-event-form" method="post" action="polls.php" novalidate>
+                                <div class="modal-body">
+                                    <input type="hidden" name="csrf_token" value="<?php echo e((string) $_SESSION['csrf_polls_token']); ?>">
+
+                                    <?php sked_render_form_errors($formErrors, 'The poll could not be created:'); ?>
+
+                                    <div class="mb-3">
+                                        <label for="question" class="form-label">Poll question</label>
+                                        <input type="text" class="form-control" id="question" name="question" maxlength="300" value="<?php echo e(sked_old('question')); ?>" placeholder="Ask one clear question for your barangay youth" required>
+                                    </div>
+
+                                    <div class="create-event-grid">
+                                        <div class="create-event-field">
+                                            <label for="category" class="form-label">Topic <span class="text-secondary fw-normal">(optional)</span></label>
+                                            <select class="form-select" id="category" name="category">
+                                                <option value="">None</option>
+                                                <?php foreach ($categories as $c): ?><option value="<?php echo e($c); ?>" <?php echo sked_old_selected('category', $c) ? 'selected' : ''; ?>><?php echo e($c); ?></option><?php endforeach; ?>
+                                            </select>
+                                            <div class="form-text">Used for program planning recommendations.</div>
+                                        </div>
+                                        <div class="create-event-field">
+                                            <label for="closes_at" class="form-label">Voting ends</label>
+                                            <input type="datetime-local" class="form-control" id="closes_at" name="closes_at" min="<?php echo e(date('Y-m-d\TH:i')); ?>" value="<?php echo e(sked_old('closes_at', $defaultCloseAt)); ?>" required>
+                                            <div class="form-text">Open polls close automatically at this date and time.</div>
+                                        </div>
+                                    </div>
+
+                                    <div class="mb-2">
+                                        <label class="form-label">Answer options <span class="text-secondary fw-normal">(2-6, blank ones ignored)</span></label>
+                                    </div>
+                                    <div class="create-event-grid">
+                                        <?php $oldOptions = sked_old_array('options'); ?>
+                                        <?php for ($i = 1; $i <= 6; $i++): ?>
+                                            <div class="create-event-field">
+                                                <input type="text" class="form-control" name="options[]" maxlength="150" value="<?php echo e($oldOptions[$i - 1] ?? ''); ?>" placeholder="Option <?php echo $i; ?><?php echo $i > 2 ? ' (optional)' : ''; ?>" aria-label="Option <?php echo $i; ?>" <?php echo $i <= 2 ? 'required' : ''; ?>>
+                                            </div>
+                                        <?php endfor; ?>
+                                    </div>
+
+                                    <div class="create-event-checks">
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="checkbox" id="publish" name="publish" value="1" <?php echo sked_old_checked('publish', '1', true) ? 'checked' : ''; ?>>
+                                            <label class="form-check-label" for="publish">Publish now and open for votes</label>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="modal-footer create-event-footer">
+                                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal"><i class="bi bi-x-circle me-1"></i>Cancel</button>
+                                    <button type="submit" class="btn btn-sked"><i class="bi bi-bar-chart-steps me-1"></i>Create poll</button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            <?php endif; ?>
 
             <?php if ($barangayId <= 0): ?>
                 <div class="alert alert-warning"><i class="bi bi-exclamation-triangle-fill me-1"></i> Your SK account isn't linked to a barangay yet.</div>
@@ -125,45 +198,7 @@ $pollCloseLabel = static function (array $poll): string {
             </section>
 
             <div class="row g-4">
-                <div class="col-lg-4">
-                    <div class="docket-panel">
-                        <div class="section-heading"><h2>New Poll</h2></div>
-                        <form method="post" action="polls.php" novalidate>
-                            <input type="hidden" name="csrf_token" value="<?php echo e((string) $_SESSION['csrf_polls_token']); ?>">
-
-                            <?php sked_render_form_errors($formErrors, 'The poll could not be created:'); ?>
-
-                            <div class="mb-3">
-                                <label for="question" class="form-label">Question</label>
-                                <input type="text" class="form-control" id="question" name="question" maxlength="300" value="<?php echo e(sked_old('question')); ?>" required>
-                            </div>
-                            <div class="mb-3">
-                                <label for="category" class="form-label">Topic <span class="text-secondary fw-normal">(optional — feeds program recommendations)</span></label>
-                                <select class="form-select" id="category" name="category">
-                                    <option value="">— None —</option>
-                                    <?php foreach ($categories as $c): ?><option value="<?php echo e($c); ?>" <?php echo sked_old_selected('category', $c) ? 'selected' : ''; ?>><?php echo e($c); ?></option><?php endforeach; ?>
-                                </select>
-                            </div>
-                            <div class="mb-3">
-                                <label for="closes_at" class="form-label">Close voting at</label>
-                                <input type="datetime-local" class="form-control" id="closes_at" name="closes_at" min="<?php echo e(date('Y-m-d\TH:i')); ?>" value="<?php echo e(sked_old('closes_at', $defaultCloseAt)); ?>" required>
-                                <div class="form-text">Open polls close automatically after this date and time.</div>
-                            </div>
-                            <label class="form-label">Answer options <span class="text-secondary fw-normal">(2&ndash;6, blank ones ignored)</span></label>
-                            <?php $oldOptions = sked_old_array('options'); ?>
-                            <?php for ($i = 1; $i <= 6; $i++): ?>
-                                <input type="text" class="form-control mb-2" name="options[]" maxlength="150" value="<?php echo e($oldOptions[$i - 1] ?? ''); ?>" placeholder="Option <?php echo $i; ?><?php echo $i > 2 ? ' (optional)' : ''; ?>" <?php echo $i <= 2 ? 'required' : ''; ?>>
-                            <?php endfor; ?>
-                            <div class="form-check mb-3 mt-1">
-                                <input class="form-check-input" type="checkbox" id="publish" name="publish" value="1" <?php echo sked_old_checked('publish', '1', true) ? 'checked' : ''; ?>>
-                                <label class="form-check-label" for="publish">Publish now (open for votes)</label>
-                            </div>
-                            <button type="submit" class="btn btn-sked w-100"><i class="bi bi-bar-chart-steps me-1"></i> Create poll</button>
-                        </form>
-                    </div>
-                </div>
-
-                <div class="col-lg-8">
+                <div class="col-12">
                     <div class="docket-panel">
                         <div class="section-heading">
                             <h2>Your Polls</h2>
@@ -236,6 +271,7 @@ $pollCloseLabel = static function (array $poll): string {
         </main>
     </div>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <?php sked_render_autoshow_modals_script(); ?>
     <script src="../../js/table-tools.js?v=4"></script>
     <script>
         new SkedTableTools('#pollsTable', { pageSize: 10, filters: [{ label: 'Topic' }, { label: 'Status' }] });

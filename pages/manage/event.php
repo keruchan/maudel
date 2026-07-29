@@ -49,6 +49,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = (string) ($_POST['action'] ?? '');
     if (!hash_equals((string) $_SESSION['csrf_mevent_token'], $token)) {
         $flash = ['type' => 'danger', 'msg' => 'Security validation failed.'];
+    } elseif ($role === 'dilg') {
+        // DILG has view-only access to events — block every mutating action
+        // server-side too, not just hidden in the UI below.
+        $flash = ['type' => 'warning', 'msg' => 'DILG has view-only access to events — this action is managed by the SK/PPSK running it.'];
     } elseif ($action === 'status') {
         $r = sked_set_event_status($userId, $event, (string) ($_POST['new_status'] ?? ''));
         $flash = $r['ok'] ? ['type' => 'success', 'msg' => 'Event status updated.'] : ['type' => 'danger', 'msg' => e($r['error'])];
@@ -88,7 +92,11 @@ $rating = sked_event_rating($eventId);
 $evalBreakdown = sked_event_evaluation_breakdown($eventId);
 $nextStatuses = sked_event_next_statuses((string) $event['status']);
 $todayLabel = date('l, F j, Y');
-$canAttend = in_array($event['status'], SKED_ATTENDANCE_OPEN_STATUSES, true);
+// DILG is view-only on events (oversight, not operations) — no attendance
+// marking, no QR/scan tools, no registration accept/decline, no lifecycle
+// transitions. See the matching server-side POST guard above.
+$isViewOnly = $role === 'dilg';
+$canAttend = !$isViewOnly && in_array($event['status'], SKED_ATTENDANCE_OPEN_STATUSES, true);
 $attendanceSummary = sked_attendance_summary($eventId);
 
 // Turnout is only worth predicting while the final headcount isn't settled yet.
@@ -208,14 +216,15 @@ $turnoutPrediction = in_array($event['status'], ['draft', 'published', 'confirme
                             <div class="text-center text-secondary py-5"><i class="bi bi-people fs-1 d-block mb-2"></i>No participants yet.</div>
                         <?php else: ?>
                             <div class="table-responsive"><table class="table align-middle" id="rosterTable">
-                                <thead><tr><th>Name</th><?php if ((int) $event['is_team_sport'] === 1): ?><th>Team</th><?php endif; ?><th>Status</th><?php if ($canAttend || $hasPending): ?><th class="text-end">Action</th><?php endif; ?></tr></thead>
+                                <?php $showActionColumn = !$isViewOnly && ($canAttend || $hasPending); ?>
+                                <thead><tr><th>Name</th><?php if ((int) $event['is_team_sport'] === 1): ?><th>Team</th><?php endif; ?><th>Status</th><?php if ($showActionColumn): ?><th class="text-end">Action</th><?php endif; ?></tr></thead>
                                 <tbody>
                                 <?php foreach ($roster as $p): ?>
                                     <tr>
                                         <td><div class="fw-semibold"><?php echo e((string) $p['name']); ?></div><div class="small text-secondary">@<?php echo e((string) $p['username']); ?></div></td>
                                         <?php if ((int) $event['is_team_sport'] === 1): ?><td class="small"><?php echo e((string) ($p['team_name'] ?? '—')); ?></td><?php endif; ?>
                                         <td><span class="badge text-bg-<?php echo $statusBadgeClass((string) $p['status']); ?> text-capitalize"><?php echo e(str_replace('_', ' ', (string) $p['status'])); ?></span></td>
-                                        <?php if ($canAttend || $hasPending): ?>
+                                        <?php if ($showActionColumn): ?>
                                         <td class="text-end">
                                             <?php if ($p['status'] === 'pending'): ?>
                                             <form method="post" action="event.php?id=<?php echo $eventId; ?>" class="d-inline">
@@ -262,7 +271,9 @@ $turnoutPrediction = in_array($event['status'], ['draft', 'published', 'confirme
                     <div class="docket-panel mb-4">
                         <div class="section-heading"><h2>Lifecycle</h2></div>
                         <p class="small text-secondary">Current: <strong class="text-capitalize"><?php echo e((string) $event['status']); ?></strong></p>
-                        <?php if (empty($nextStatuses)): ?>
+                        <?php if ($isViewOnly): ?>
+                            <p class="small text-secondary mb-0"><i class="bi bi-eye me-1"></i>View-only — lifecycle changes are managed by the SK/PPSK running this event.</p>
+                        <?php elseif (empty($nextStatuses)): ?>
                             <p class="small text-secondary mb-0">No further transitions available.</p>
                         <?php else: ?>
                             <div class="d-flex flex-column gap-2">

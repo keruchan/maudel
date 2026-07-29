@@ -46,6 +46,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $polls = ($isVerified && $barangayId > 0) ? sked_open_polls_for_youth($barangayId) : [];
+$pollCloseLabel = static function (array $poll): string {
+    return !empty($poll['closes_at']) ? date('M j, Y g:i A', strtotime((string) $poll['closes_at'])) : 'Not scheduled';
+};
 ?>
 <!doctype html>
 <html lang="en">
@@ -96,25 +99,41 @@ $polls = ($isVerified && $barangayId > 0) ? sked_open_polls_for_youth($barangayI
                 <?php if (empty($polls)): ?>
                     <div class="docket-panel text-center text-secondary py-5"><i class="bi bi-bar-chart fs-1 d-block mb-2"></i>No open polls right now. Check back soon.</div>
                 <?php else: ?>
+                    <section class="row g-3 mb-4" aria-label="Community poll summary">
+                        <div class="col-sm-6 col-lg-4">
+                            <div class="ledger-card accent-teal">
+                                <span class="ledger-tag">Open Polls</span>
+                                <div class="ledger-value tabular"><?php echo count($polls); ?></div>
+                                <div class="ledger-caption">Available for your barangay</div>
+                            </div>
+                        </div>
+                    </section>
+
                     <div class="row g-3">
                     <?php foreach ($polls as $p):
                         $myVote = $isDemo ? null : sked_youth_poll_vote($userId, (int) $p['id']);
                         $res = sked_poll_results((int) $p['id']);
+                        $endsLabel = $pollCloseLabel($p);
                     ?>
-                        <div class="col-md-6">
-                            <div class="registry-card h-100">
-                                <span class="registry-icon"><i class="bi bi-bar-chart-steps"></i></span>
-                                <h3><?php echo e((string) $p['question']); ?></h3>
-                                <?php if (!empty($p['closes_at'])): ?>
-                                    <p class="small text-secondary mb-2"><i class="bi bi-clock me-1"></i>Closes <?php echo e(date('M j, Y g:i A', strtotime((string) $p['closes_at']))); ?></p>
+                        <div class="col-xl-6">
+                            <article class="docket-panel h-100">
+                                <div class="section-heading align-items-start">
+                                    <div>
+                                        <span class="badge text-bg-primary mb-2"><i class="bi bi-bar-chart-steps me-1"></i>Open Poll</span>
+                                        <h2 class="h5 mb-0"><?php echo e((string) $p['question']); ?></h2>
+                                    </div>
+                                    <span class="section-note text-end"><i class="bi bi-clock me-1"></i>Voting ends<br><strong><?php echo e($endsLabel); ?></strong></span>
+                                </div>
+                                <?php if (!empty($p['category'])): ?>
+                                    <div class="mb-3"><span class="badge text-bg-light text-secondary border"><?php echo e((string) $p['category']); ?></span></div>
                                 <?php endif; ?>
 
                                 <?php if ($myVote !== null): ?>
-                                    <p class="small text-success mb-2"><i class="bi bi-check-circle-fill me-1"></i>You voted &mdash; thanks for your input!</p>
+                                    <div class="alert alert-success py-2 small" role="status"><i class="bi bi-check-circle-fill me-1"></i>You voted. Thanks for your input!</div>
                                     <?php foreach ($res['options'] as $o): $pct = $res['total'] > 0 ? (int) round($o['votes'] / $res['total'] * 100) : 0; ?>
-                                        <div class="small d-flex justify-content-between">
+                                        <div class="small d-flex justify-content-between gap-2">
                                             <span><?php echo $o['id'] === $myVote ? '<strong>' : ''; ?><?php echo e((string) $o['option_text']); ?><?php echo $o['id'] === $myVote ? ' <i class="bi bi-check2"></i></strong>' : ''; ?></span>
-                                            <span class="text-secondary"><?php echo $o['votes']; ?> (<?php echo $pct; ?>%)</span>
+                                            <span class="text-secondary tabular"><?php echo $o['votes']; ?> (<?php echo $pct; ?>%)</span>
                                         </div>
                                         <div class="poll-bar mb-2"><div style="width:<?php echo $pct; ?>%"></div></div>
                                     <?php endforeach; ?>
@@ -123,15 +142,15 @@ $polls = ($isVerified && $barangayId > 0) ? sked_open_polls_for_youth($barangayI
                                         <input type="hidden" name="csrf_token" value="<?php echo e((string) $_SESSION['csrf_ypolls_token']); ?>">
                                         <input type="hidden" name="poll_id" value="<?php echo (int) $p['id']; ?>">
                                         <?php foreach ($res['options'] as $o): ?>
-                                            <div class="form-check mb-1">
+                                            <div class="form-check border rounded-3 ps-5 pe-3 py-2 mb-2">
                                                 <input class="form-check-input" type="radio" name="option_id" id="opt<?php echo (int) $o['id']; ?>" value="<?php echo (int) $o['id']; ?>" required>
                                                 <label class="form-check-label" for="opt<?php echo (int) $o['id']; ?>"><?php echo e((string) $o['option_text']); ?></label>
                                             </div>
                                         <?php endforeach; ?>
-                                        <button type="submit" class="btn btn-sm btn-sked mt-2" <?php echo $isDemo ? 'disabled' : ''; ?>><i class="bi bi-send-check me-1"></i> Submit vote</button>
+                                        <button type="submit" class="btn btn-sked mt-2" <?php echo $isDemo ? 'disabled' : ''; ?>><i class="bi bi-send-check me-1"></i> Submit vote</button>
                                     </form>
                                 <?php endif; ?>
-                            </div>
+                            </article>
                         </div>
                     <?php endforeach; ?>
                     </div>

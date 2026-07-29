@@ -18,7 +18,7 @@ require_once __DIR__ . '/../../includes/abyip.php';
 require_once __DIR__ . '/../../includes/katitikan.php';
 require_once __DIR__ . '/../../includes/plan_uploads.php';
 
-require_roles(['sk', 'ppsk', 'dilg']);
+require_roles(['sk', 'ppsk', 'dilg', 'youth']);
 
 $role = (string) $_SESSION['role'];
 $sessionBarangayId = isset($_SESSION['barangay_id']) ? (int) $_SESSION['barangay_id'] : 0;
@@ -28,6 +28,10 @@ $planId = (int) ($_GET['id'] ?? 0);
 if (!in_array($type, SKED_PLAN_UPLOAD_TYPES, true)) {
     http_response_code(404);
     exit('Not found.');
+}
+if ($role === 'youth' && !in_array($type, ['cbydp', 'abyip'], true)) {
+    http_response_code(403);
+    exit('Forbidden.');
 }
 
 $plan = match ($type) {
@@ -39,7 +43,11 @@ if ($plan === null || empty($plan['signed_file_path'])) {
     http_response_code(404);
     exit('Not found.');
 }
-if ($role === 'sk' && (int) $plan['barangay_id'] !== $sessionBarangayId) {
+if (in_array($role, ['sk', 'youth'], true) && (int) $plan['barangay_id'] !== $sessionBarangayId) {
+    http_response_code(403);
+    exit('Forbidden.');
+}
+if ($role === 'youth' && in_array($type, ['cbydp', 'abyip'], true) && (string) $plan['status'] !== 'finalized') {
     http_response_code(403);
     exit('Forbidden.');
 }

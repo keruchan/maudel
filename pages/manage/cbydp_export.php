@@ -15,14 +15,16 @@ require_once __DIR__ . '/../../includes/auth.php';
 require_once __DIR__ . '/../../includes/view.php';
 require_once __DIR__ . '/../../includes/cbydp.php';
 
-require_roles(['sk', 'ppsk', 'dilg']);
+require_roles(['sk', 'ppsk', 'dilg', 'youth']);
 
 $role = (string) $_SESSION['role'];
 $sessionBarangayId = isset($_SESSION['barangay_id']) ? (int) $_SESSION['barangay_id'] : 0;
 $planId = (int) ($_GET['id'] ?? 0);
 $plan = sked_cbydp_get($planId);
-if ($plan === null || ($role === 'sk' && (int) $plan['barangay_id'] !== $sessionBarangayId)) {
-    header('Location: ' . ($role === 'sk' ? 'cbydp.php' : '../' . $role . '/dashboard.php'));
+if ($plan === null
+    || (in_array($role, ['sk', 'youth'], true) && (int) $plan['barangay_id'] !== $sessionBarangayId)
+    || ($role === 'youth' && (string) $plan['status'] !== 'finalized')) {
+    header('Location: ' . ($role === 'sk' ? 'cbydp.php' : '../' . $role . '/' . ($role === 'youth' ? 'full_disclosure.php' : 'dashboard.php')));
     exit;
 }
 $yearStart = (int) $plan['cy_year_start'];

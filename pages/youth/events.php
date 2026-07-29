@@ -115,7 +115,7 @@ $renderBrowseTable = function (string $title, array $list, string $icon, string 
                             $joined = in_array($mine, ['interested', 'pending', 'registered', 'attended'], true);
                             $imageUrl = sked_event_image_url($ev, '../public/event_image.php');
                         ?>
-                        <tr>
+                        <tr data-event-id="<?php echo (int) $ev['id']; ?>" data-event-title="<?php echo e((string) $ev['title']); ?>">
                             <td>
                                 <div class="event-list-item">
                                     <span class="event-list-thumb" aria-hidden="true">
@@ -377,6 +377,30 @@ $renderBrowseTable = function (string $title, array $list, string $icon, string 
             new SkedTableTools('#' + id, { pageSize: 8, filters: [{ label: 'Scope' }] });
         });
         new SkedTableTools('#pastEventsTable', { pageSize: 8, filters: [{ label: 'My Status' }] });
+
+        // Landing-page carousel cards link here as "?highlight=<eventId>" so a
+        // click routes into the youth's own Browse Events view instead of the
+        // no-login public share page. Reuse the table's own search box to pull
+        // the row onto page 1 (pagination would otherwise hide it), then scroll
+        // + flash it — no changes to table-tools.js itself.
+        (function () {
+            var highlightId = parseInt(new URLSearchParams(window.location.search).get('highlight'), 10);
+            if (!highlightId) { return; }
+            var row = document.querySelector('tr[data-event-id="' + highlightId + '"]');
+            if (!row) { return; }
+            var wrap = row.closest('.table-responsive');
+            var toolbar = wrap ? wrap.previousElementSibling : null;
+            var searchInput = toolbar ? toolbar.querySelector('input[type="search"]') : null;
+            if (searchInput) {
+                searchInput.value = row.getAttribute('data-event-title') || '';
+                searchInput.dispatchEvent(new Event('input', { bubbles: true }));
+            }
+            setTimeout(function () {
+                row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                row.classList.add('tt-row-highlight');
+                setTimeout(function () { row.classList.remove('tt-row-highlight'); }, 2600);
+            }, 50);
+        })();
 
         document.querySelectorAll('.evaluation-modal .modal-body').forEach(function (body) {
             var section = null;

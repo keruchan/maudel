@@ -13,6 +13,7 @@ require_once __DIR__ . '/../../includes/auth.php';
 require_once __DIR__ . '/../../includes/view.php';
 require_once __DIR__ . '/../../includes/barangays.php';
 require_once __DIR__ . '/../../includes/reports.php';
+require_once __DIR__ . '/../../includes/compliance.php';
 
 require_roles(['sk', 'ppsk', 'dilg']);
 
@@ -36,6 +37,22 @@ $typeLabels = [
 ];
 $typeLabel = $typeLabels[(string) $report['type']] ?? ucwords(str_replace('_', ' ', (string) $report['type']));
 $barangayName = !empty($report['barangay_id']) ? sked_barangay_name((int) $report['barangay_id']) : '';
+
+$isDismissal = (string) $report['type'] === 'dismissal_recommendation';
+$subjectSk = null;
+$skStrikes = [];
+$reviewerName = '';
+if ($isDismissal && !empty($report['ref_user_id'])) {
+    $skStmt = sked_db()->prepare('SELECT name, barangay_id, former_role_badge FROM users WHERE id = :id LIMIT 1');
+    $skStmt->execute(['id' => (int) $report['ref_user_id']]);
+    $subjectSk = $skStmt->fetch() ?: null;
+    $skStrikes = sked_strikes_for_sk((int) $report['ref_user_id']);
+}
+if ($isDismissal && !empty($report['reviewed_by'])) {
+    $reviewerStmt = sked_db()->prepare('SELECT name FROM users WHERE id = :id LIMIT 1');
+    $reviewerStmt->execute(['id' => (int) $report['reviewed_by']]);
+    $reviewerName = (string) $reviewerStmt->fetchColumn();
+}
 ?>
 <!doctype html>
 <html lang="en">
@@ -56,6 +73,22 @@ $barangayName = !empty($report['barangay_id']) ? sked_barangay_name((int) $repor
   .content{white-space:pre-wrap;border:1px solid #d1d5db;padding:16px;min-height:160px;margin-top:12px;}
   .attachment{margin-top:18px;padding:12px;border:1px solid #111827;background:#f9fafb;}
   .status{display:inline-block;border:1px solid #111827;border-radius:999px;padding:2px 9px;font-size:10pt;text-transform:capitalize;}
+  .letterhead{text-align:center;margin-bottom:16px;}
+  .letterhead div{line-height:1.3;}
+  .letterhead .office{font-weight:bold;text-transform:uppercase;margin-top:4px;}
+  .doc-title{text-align:center;font-weight:bold;font-size:15pt;text-transform:uppercase;letter-spacing:.03em;margin:16px 0 4px;}
+  .doc-subtitle{text-align:center;color:#4b5563;font-size:10pt;margin-bottom:18px;}
+  .subject-box{border:1.5px solid #111827;padding:14px 16px;margin:16px 0;}
+  .subject-box .label{margin-bottom:2px;}
+  .subject-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px 24px;}
+  .strikes-table{width:100%;border-collapse:collapse;margin:10px 0 4px;font-size:10.5pt;}
+  .strikes-table th,.strikes-table td{border:1px solid #d1d5db;padding:6px 8px;text-align:left;}
+  .strikes-table th{background:#f3f4f6;text-transform:uppercase;font-size:8.5pt;letter-spacing:.04em;}
+  .outcome-box{border:1.5px solid #111827;padding:14px 16px;margin:18px 0;background:#f9fafb;}
+  .sign-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 40px;margin-top:56px;}
+  .sign-line{border-top:1px solid #111827;padding-top:6px;margin-top:48px;}
+  .sign-name{font-weight:bold;text-transform:uppercase;}
+  .sign-role{font-size:9.5pt;color:#4b5563;}
   @media print{.print-bar{display:none;} body{padding:0;} a{color:#111827;text-decoration:none;} .content{min-height:120px;}}
 </style>
 </head>
@@ -67,11 +100,53 @@ $barangayName = !empty($report['barangay_id']) ? sked_barangay_name((int) $repor
     <?php endif; ?>
   </div>
 
+  <?php if ($isDismissal): ?>
+    <div class="letterhead">
+      <div>Republic of the Philippines</div>
+      <div>Province of Laguna</div>
+      <div>Municipality of Siniloan</div>
+      <div class="office">Department of the Interior and Local Government</div>
+    </div>
+    <div class="doc-title">SK Compliance Dismissal Recommendation</div>
+    <div class="doc-subtitle">Sangguniang Kabataan Accountability &amp; Compliance Review</div>
+  <?php else: ?>
   <div class="doc-header">
     <div class="eyebrow">SKed Report Export</div>
     <h1><?php echo e((string) $report['title']); ?></h1>
     <div><?php echo e($typeLabel); ?> <span class="status"><?php echo e((string) $report['status']); ?></span></div>
   </div>
+  <?php endif; ?>
+
+  <?php if ($isDismissal): ?>
+    <div class="subject-box">
+      <span class="label">Subject Official</span>
+      <div class="subject-grid">
+        <div><strong><?php echo e($subjectSk !== null ? (string) $subjectSk['name'] : 'Unknown'); ?></strong> &mdash; SK Chairperson</div>
+        <div>Barangay <?php echo e($barangayName !== '' ? $barangayName : '—'); ?></div>
+      </div>
+      <?php if ($subjectSk !== null && !empty($subjectSk['former_role_badge'])): ?>
+        <div class="small" style="margin-top:6px;font-style:italic;">Current standing: <?php echo e((string) $subjectSk['former_role_badge']); ?></div>
+      <?php endif; ?>
+    </div>
+
+    <h2 style="font-size:13pt;margin-bottom:6px;">Grounds: Compliance Strike History</h2>
+    <?php if (empty($skStrikes)): ?>
+      <p class="small" style="color:#4b5563;">No strikes currently on file for this official (may have been cleared since this report was filed).</p>
+    <?php else: ?>
+      <table class="strikes-table">
+        <thead><tr><th>Period</th><th>Reason</th><th>Recorded</th></tr></thead>
+        <tbody>
+        <?php foreach ($skStrikes as $s): ?>
+          <tr>
+            <td><?php echo e(date('F Y', strtotime((string) $s['period_month'] . '-01'))); ?></td>
+            <td><?php echo e((string) $s['reason']); ?></td>
+            <td><?php echo e(date('M j, Y', strtotime((string) $s['created_at']))); ?></td>
+          </tr>
+        <?php endforeach; ?>
+        </tbody>
+      </table>
+    <?php endif; ?>
+  <?php endif; ?>
 
   <div class="meta">
     <div><span class="label">Submitted by</span><?php echo e((string) ($report['submitted_by_name'] ?? '')); ?></div>
@@ -86,8 +161,34 @@ $barangayName = !empty($report['barangay_id']) ? sked_barangay_name((int) $repor
     <?php endif; ?>
   </div>
 
-  <h2 style="font-size:14pt;margin-bottom:6px;">Report Content</h2>
+  <h2 style="font-size:14pt;margin-bottom:6px;"><?php echo $isDismissal ? 'Basis for Recommendation' : 'Report Content'; ?></h2>
   <div class="content"><?php echo e((string) ($report['content'] ?? 'No written content provided.')); ?></div>
+
+  <?php if ($isDismissal): ?>
+    <div class="outcome-box">
+      <span class="label">DILG Action / Outcome</span>
+      <div><strong><?php echo e(sked_report_status_label((string) $report['status'], true)); ?></strong>
+        <?php if (!empty($report['reviewed_at'])): ?> — <?php echo e(date('F j, Y', strtotime((string) $report['reviewed_at']))); ?><?php endif; ?>
+      </div>
+      <?php if (!empty($report['review_comments'])): ?>
+        <div style="margin-top:8px;white-space:pre-wrap;"><?php echo nl2br(e((string) $report['review_comments'])); ?></div>
+      <?php endif; ?>
+      <?php if ((string) $report['status'] === 'submitted'): ?>
+        <div style="margin-top:8px;color:#4b5563;font-style:italic;">No action taken yet — pending DILG review.</div>
+      <?php endif; ?>
+    </div>
+
+    <div class="sign-grid">
+      <div class="sign-line">
+        <div class="sign-name"><?php echo e((string) ($report['submitted_by_name'] ?? '_________________________')); ?></div>
+        <div class="sign-role">Reporting PPSK President</div>
+      </div>
+      <div class="sign-line">
+        <div class="sign-name"><?php echo e($reviewerName !== '' ? $reviewerName : '_________________________'); ?></div>
+        <div class="sign-role">Reviewing DILG Officer</div>
+      </div>
+    </div>
+  <?php endif; ?>
 
   <?php if (!empty($report['attachment_file_path'])): ?>
     <div class="attachment">

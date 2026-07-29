@@ -644,12 +644,16 @@ function sked_events_for_youth(int $youthId, int $barangayId): array
  * bodies called after both are loaded).
  *
  * $viewerBarangayId null => anonymous/no-barangay viewer: municipal-scope
- * items only. A real barangay id => same eligibility rule as
- * sked_events_for_youth (municipal + own barangay + inter-barangay that
- * includes that barangay) — e.g. a barangay-scoped post from Acevida's SK
- * is only returned when $viewerBarangayId is Acevida's id.
+ * items only (or municipal + every inter-barangay item when
+ * $includeAllInterbarangay is set — for PPSK, whose scope is federation-wide
+ * rather than tied to one barangay, see sked_allowed_scopes_for_role()). A
+ * real barangay id => same eligibility rule as sked_events_for_youth
+ * (municipal + own barangay + inter-barangay that includes that barangay)
+ * — e.g. a barangay-scoped post from Acevida's SK is only returned when
+ * $viewerBarangayId is Acevida's id. Used for both youth and SK viewers
+ * (SK passes their own session barangay_id, same as youth).
  */
-function sked_public_announcements(?int $viewerBarangayId, int $limit = 6): array
+function sked_public_announcements(?int $viewerBarangayId, int $limit = 6, bool $includeAllInterbarangay = false): array
 {
     require_once __DIR__ . '/announcements.php';
 
@@ -657,10 +661,11 @@ function sked_public_announcements(?int $viewerBarangayId, int $limit = 6): arra
     $limit = max(1, $limit);
 
     if ($viewerBarangayId === null || $viewerBarangayId <= 0) {
+        $scopeSql = $includeAllInterbarangay ? "e.scope IN ('municipal','interbarangay')" : "e.scope = 'municipal'";
         $stmt = $pdo->prepare(
-            "SELECT * FROM events
-              WHERE status IN ('published','confirmed','ongoing') AND scope = 'municipal'
-              ORDER BY event_date ASC, id DESC"
+            "SELECT e.* FROM events e
+              WHERE e.status IN ('published','confirmed','ongoing') AND {$scopeSql}
+              ORDER BY e.event_date ASC, e.id DESC"
         );
         $stmt->execute();
         $events = $stmt->fetchAll();
@@ -686,7 +691,7 @@ function sked_public_announcements(?int $viewerBarangayId, int $limit = 6): arra
     }
     unset($e);
 
-    $announcements = sked_published_announcements_for_feed($viewerBarangayId, $limit);
+    $announcements = sked_published_announcements_for_feed($viewerBarangayId, $limit, $includeAllInterbarangay);
     foreach ($announcements as &$a) {
         $a['feed_type'] = 'announcement';
         $a['feed_sort_at'] = (string) $a['created_at'];

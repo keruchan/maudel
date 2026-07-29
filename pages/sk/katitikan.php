@@ -50,6 +50,11 @@ $skMembers = $barangayId > 0 ? sked_sk_officials_for_barangay($barangayId) : [];
 $finalizedCount = count(array_filter($records, static fn($r) => $r['status'] === 'finalized'));
 $draftCount = count($records) - $finalizedCount;
 $defaultYear = (int) date('Y');
+$formSeriesYear = (int) sked_old('series_year', (string) $defaultYear);
+if ($formSeriesYear < 2020 || $formSeriesYear > 2100) {
+    $formSeriesYear = $defaultYear;
+}
+$nextSessionNo = $barangayId > 0 ? sked_katitikan_next_session_no($barangayId, $formSeriesYear) : '001';
 ?>
 <!doctype html>
 <html lang="en">
@@ -128,13 +133,14 @@ $defaultYear = (int) date('Y');
                             <?php sked_render_form_errors($formErrors, 'The session could not be created:'); ?>
 
                             <div class="row g-2">
-                                <div class="col-6">
-                                    <label class="form-label">Session No.</label>
-                                    <input type="text" class="form-control" name="session_no" maxlength="20" placeholder="001" value="<?php echo e(sked_old('session_no')); ?>" required>
+                                <div class="col-12">
+                                    <div class="count-badge w-100 justify-content-start">
+                                        <i class="bi bi-hash me-1"></i>Next Session No. <?php echo e($nextSessionNo); ?> will be assigned automatically
+                                    </div>
                                 </div>
                                 <div class="col-6">
                                     <label class="form-label">Series Year</label>
-                                    <input type="number" class="form-control" name="series_year" value="<?php echo e(sked_old('series_year', (string) $defaultYear)); ?>" min="2020" max="2100" required>
+                                    <input type="number" class="form-control" name="series_year" value="<?php echo e((string) $formSeriesYear); ?>" min="2020" max="2100" required>
                                 </div>
                                 <div class="col-6">
                                     <label class="form-label">Meeting Date</label>

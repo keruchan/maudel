@@ -177,6 +177,21 @@ function sked_mark_notification_read(int $userId, int $notifId): bool
     }
 }
 
+/** Delete a single notification. Scoped to $userId so one user can't delete another's. */
+function sked_delete_notification(int $userId, int $notifId): bool
+{
+    if ($userId <= 0 || $notifId <= 0) {
+        return false;
+    }
+    try {
+        $stmt = sked_db()->prepare('DELETE FROM notifications WHERE id = :id AND user_id = :u');
+        $stmt->execute(['id' => $notifId, 'u' => $userId]);
+        return $stmt->rowCount() > 0;
+    } catch (Throwable $e) {
+        return false;
+    }
+}
+
 /** Icon + accent color for a notification type, for the bell panel. */
 function sked_notification_visual(string $type): array
 {
