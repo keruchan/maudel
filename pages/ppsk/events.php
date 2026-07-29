@@ -23,11 +23,11 @@ $role = (string) $_SESSION['role'];
 $ppskUserId = (int) $_SESSION['id'];
 $displayName = !empty($_SESSION['name']) ? (string) $_SESSION['name'] : 'Pederasyon President';
 $todayLabel = date('l, F j, Y');
-$categories = sked_interest_categories();
 $barangays = sked_barangays();
 
 $flash = ['type' => '', 'msg' => ''];
 $formErrors = [];
+$reopenModal = false;
 
 if (empty($_SESSION['csrf_pevents_token'])) {
     $_SESSION['csrf_pevents_token'] = bin2hex(random_bytes(32));
@@ -37,6 +37,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $token = (string) ($_POST['csrf_token'] ?? '');
     if (!hash_equals((string) $_SESSION['csrf_pevents_token'], $token)) {
         $formErrors = ['Security validation failed. Please try again.'];
+        $reopenModal = true;
     } else {
         $creator = ['id' => $ppskUserId, 'role' => $role, 'name' => $displayName, 'barangay_id' => null];
         $r = sked_create_event($creator, $_POST, $_FILES['event_image'] ?? null);
@@ -44,12 +45,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $flash = ['type' => 'success', 'msg' => 'Event "' . e((string) $_POST['title']) . '" created' . (!empty($_POST['publish']) ? ' and published.' : ' as a draft.')];
         } else {
             $formErrors = $r['errors'];
+            $reopenModal = true;
         }
     }
 }
 
 // Keep everything typed when the form comes back with errors.
-sked_form_retain(!empty($formErrors));
+sked_form_retain($reopenModal);
 
 $events = sked_events_for_manager($role, $ppskUserId, null);
 $ongoingEvents = array_values(array_filter($events, static fn ($e) => sked_event_time_bucket($e) === 'ongoing'));
@@ -133,7 +135,7 @@ $renderEventsTable = function (string $title, array $list, string $icon, string 
     <link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="../../css/dashboard.css?v=1">
+    <link rel="stylesheet" href="../../css/dashboard.css?v=2">
 </head>
 <body>
     <a href="#main-content" class="skip-link">Skip to main content</a>
@@ -152,6 +154,7 @@ $renderEventsTable = function (string $title, array $list, string $icon, string 
                         <?php render_sked_notification_bell('header'); ?><span class="officer-chip">
                             <span class="avatar-dot"><?php echo e(strtoupper(substr($displayName, 0, 1))); ?></span><?php echo e($displayName); ?>
                         </span>
+                        <button type="button" class="btn btn-sked" data-bs-toggle="modal" data-bs-target="#createEventModal"><i class="bi bi-calendar-plus me-1"></i> Create Event</button>
                         <a class="btn-logout-outline text-decoration-none" href="dashboard.php"><i class="bi bi-arrow-left me-1"></i> Dashboard</a>
                     </div>
                 </div>
@@ -160,14 +163,18 @@ $renderEventsTable = function (string $title, array $list, string $icon, string 
 
             <?php if ($flash['msg'] !== ''): ?><div class="alert alert-<?php echo e($flash['type']); ?>" role="alert"><?php echo $flash['msg']; ?></div><?php endif; ?>
 
-            <div class="row g-4 mb-1">
-                <div class="col-lg-5">
-                    <div class="docket-panel">
-                        <div class="section-heading"><h2>Create Event</h2></div>
-                        <form method="post" action="events.php" enctype="multipart/form-data" novalidate>
-                            <input type="hidden" name="csrf_token" value="<?php echo e((string) $_SESSION['csrf_pevents_token']); ?>">
+            <div class="modal fade" id="createEventModal" tabindex="-1" aria-labelledby="createEventModalLabel" aria-hidden="true"<?php echo $reopenModal ? ' data-autoshow="1"' : ''; ?>>
+                <div class="modal-dialog modal-lg modal-dialog-scrollable create-event-dialog">
+                    <div class="modal-content create-event-modal">
+                        <div class="modal-header">
+                            <h2 class="modal-title h5" id="createEventModalLabel">Create Event</h2>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                        </div>
+                        <form class="create-event-form" method="post" action="events.php" enctype="multipart/form-data" novalidate>
+                            <div class="modal-body">
+                                <input type="hidden" name="csrf_token" value="<?php echo e((string) $_SESSION['csrf_pevents_token']); ?>">
 
-                            <?php sked_render_form_errors($formErrors, 'The event could not be created:'); ?>
+                                <?php sked_render_form_errors($formErrors, 'The event could not be created:'); ?>
 
                             <div class="mb-3">
                                 <label for="title" class="form-label">Title</label>
@@ -205,41 +212,87 @@ $renderEventsTable = function (string $title, array $list, string $icon, string 
                                     <?php if (!empty($formErrors)): ?><span class="text-warning-emphasis">A previously chosen photo must be picked again — browsers never resend file inputs.</span><?php endif; ?>
                                 </div>
                             </div>
-                            <div class="row g-2">
-                                <div class="col-6 mb-3">
-                                    <label for="category" class="form-label">Category</label>
-                                    <select class="form-select" id="category" name="category">
-                                        <option value="">— None —</option>
-                                        <?php foreach ($categories as $c): ?><option value="<?php echo e($c); ?>" <?php echo sked_old_selected('category', $c) ? 'selected' : ''; ?>><?php echo e($c); ?></option><?php endforeach; ?>
-                                    </select>
-                                </div>
-                                <div class="col-6 mb-3">
+                            <div class="create-event-grid">
+                                <div class="create-event-field">
                                     <label for="type" class="form-label">Type</label>
                                     <select class="form-select" id="type" name="type">
-                                        <option value="interested" <?php echo sked_old_selected('type', 'interested', true) ? 'selected' : ''; ?>>Interested / Join</option>
-                                        <option value="register" <?php echo sked_old_selected('type', 'register') ? 'selected' : ''; ?>>Register (slots)</option>
+                                        <option value="interested" <?php echo sked_old_selected('type', 'interested', true) ? 'selected' : ''; ?>>Interested / Join (no cap)</option>
+                                        <option value="register" <?php echo sked_old_selected('type', 'register') ? 'selected' : ''; ?>>Register (limited slots)</option>
                                     </select>
                                 </div>
+                                <div class="create-event-field">
+                                    <label for="location" class="form-label">Location</label>
+                                    <input type="text" class="form-control" id="location" name="location" maxlength="200" value="<?php echo e(sked_old('location')); ?>">
+                                </div>
                             </div>
-                            <div class="mb-3">
-                                <label for="location" class="form-label">Location</label>
-                                <input type="text" class="form-control" id="location" name="location" maxlength="200" value="<?php echo e(sked_old('location')); ?>">
+                            <div class="create-event-grid">
+                                <div class="create-event-field">
+                                    <label for="event_date" class="form-label">Event date</label>
+                                    <input type="date" class="form-control" id="event_date" name="event_date" min="<?php echo e(date('Y-m-d')); ?>" value="<?php echo e(sked_old('event_date')); ?>" required>
+                                </div>
+                                <div class="create-event-field">
+                                    <label for="registration_deadline" class="form-label">Reg. deadline</label>
+                                    <input type="date" class="form-control" id="registration_deadline" name="registration_deadline" min="<?php echo e(date('Y-m-d')); ?>" value="<?php echo e(sked_old('registration_deadline')); ?>">
+                                </div>
+                                <div class="create-event-field">
+                                    <label for="min_participants" class="form-label">Min. participants</label>
+                                    <input type="number" class="form-control" id="min_participants" name="min_participants" min="0" value="<?php echo e(sked_old('min_participants', '0')); ?>">
+                                </div>
+                                <div class="create-event-field">
+                                    <label for="capacity" class="form-label">Capacity <span class="text-secondary fw-normal">(register)</span></label>
+                                    <input type="number" class="form-control" id="capacity" name="capacity" min="1" placeholder="e.g. 60" value="<?php echo e(sked_old('capacity')); ?>">
+                                </div>
                             </div>
-                            <div class="row g-2">
-                                <div class="col-6 mb-3"><label for="event_date" class="form-label">Event date</label><input type="date" class="form-control" id="event_date" name="event_date" min="<?php echo e(date('Y-m-d')); ?>" value="<?php echo e(sked_old('event_date')); ?>" required></div>
-                                <div class="col-6 mb-3"><label for="registration_deadline" class="form-label">Reg. deadline</label><input type="date" class="form-control" id="registration_deadline" name="registration_deadline" min="<?php echo e(date('Y-m-d')); ?>" value="<?php echo e(sked_old('registration_deadline')); ?>"></div>
-                                <div class="col-6 mb-3"><label for="min_participants" class="form-label">Min. participants</label><input type="number" class="form-control" id="min_participants" name="min_participants" min="0" value="<?php echo e(sked_old('min_participants', '0')); ?>"></div>
-                                <div class="col-6 mb-3"><label for="capacity" class="form-label">Capacity <span class="text-secondary fw-normal">(register)</span></label><input type="number" class="form-control" id="capacity" name="capacity" min="1" placeholder="e.g. 60" value="<?php echo e(sked_old('capacity')); ?>"></div>
+                            <div class="create-event-checks">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="is_team_sport" name="is_team_sport" value="1" <?php echo sked_old_checked('is_team_sport', '1') ? 'checked' : ''; ?>>
+                                    <label class="form-check-label" for="is_team_sport">Team sport (registrants enter a team name)</label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="publish" name="publish" value="1" <?php echo sked_old_checked('publish', '1', true) ? 'checked' : ''; ?>>
+                                    <label class="form-check-label" for="publish">Publish now (visible to youth)</label>
+                                </div>
                             </div>
-                            <div class="form-check mb-2">
-                                <input class="form-check-input" type="checkbox" id="is_team_sport" name="is_team_sport" value="1" <?php echo sked_old_checked('is_team_sport', '1') ? 'checked' : ''; ?>>
-                                <label class="form-check-label" for="is_team_sport">Team sport</label>
+
+                            <hr>
+                            <?php
+                                // Maps each targeting dimension to its POST field name + label.
+                                $targetFields = [
+                                    'classification' => ['field' => 'target_classifications', 'label' => 'Youth Classification'],
+                                    'specific_need' => ['field' => 'target_specific_needs', 'label' => 'Specific Needs'],
+                                    'sex' => ['field' => 'target_sex', 'label' => 'Sex'],
+                                    'interest' => ['field' => 'target_interests', 'label' => 'Interests / Advocacy'],
+                                ];
+                                $anyTargetingRetained = false;
+                                foreach ($targetFields as $tf) {
+                                    if (!empty(sked_old_array($tf['field']))) { $anyTargetingRetained = true; break; }
+                                }
+                            ?>
+                            <a class="d-inline-block mb-2 text-decoration-none" data-bs-toggle="collapse" href="#forYouTargeting" role="button" aria-expanded="false" aria-controls="forYouTargeting">
+                                <i class="bi bi-stars me-1"></i>Target specific youth (optional) <i class="bi bi-chevron-down small"></i>
+                            </a>
+                            <div class="collapse<?php echo $anyTargetingRetained ? ' show' : ''; ?>" id="forYouTargeting">
+                                <p class="small text-secondary">Leave everything unchecked for a normal event visible to everyone. Checking any box here also surfaces this event as a "For You" pick for youth who match it — nobody is excluded.</p>
+                                <?php foreach (sked_event_targeting_options() as $dimension => $values): $tf = $targetFields[$dimension]; ?>
+                                    <div class="mb-2">
+                                        <div class="small fw-semibold text-secondary text-uppercase mb-1"><?php echo e($tf['label']); ?></div>
+                                        <div class="d-flex flex-wrap gap-2">
+                                            <?php foreach ($values as $value): $inputId = 'ptarget_' . $dimension . '_' . md5($value); ?>
+                                                <div class="form-check form-check-inline m-0">
+                                                    <input class="form-check-input" type="checkbox" id="<?php echo e($inputId); ?>" name="<?php echo e($tf['field']); ?>[]" value="<?php echo e($value); ?>" <?php echo in_array($value, sked_old_array($tf['field']), true) ? 'checked' : ''; ?>>
+                                                    <label class="form-check-label small" for="<?php echo e($inputId); ?>"><?php echo e(ucfirst($value)); ?></label>
+                                                </div>
+                                            <?php endforeach; ?>
+                                        </div>
+                                    </div>
+                                <?php endforeach; ?>
                             </div>
-                            <div class="form-check mb-3">
-                                <input class="form-check-input" type="checkbox" id="publish" name="publish" value="1" <?php echo sked_old_checked('publish', '1', true) ? 'checked' : ''; ?>>
-                                <label class="form-check-label" for="publish">Publish now</label>
+
                             </div>
-                            <button type="submit" class="btn btn-sked w-100"><i class="bi bi-calendar-plus me-1"></i> Create event</button>
+                            <div class="modal-footer create-event-footer">
+                                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal"><i class="bi bi-x-circle me-1"></i>Cancel</button>
+                                <button type="submit" class="btn btn-sked"><i class="bi bi-calendar-plus me-1"></i> Create event</button>
+                            </div>
                         </form>
                     </div>
                 </div>
@@ -247,15 +300,16 @@ $renderEventsTable = function (string $title, array $list, string $icon, string 
 
             <?php
                 $renderEventsTable('Ongoing Events', $ongoingEvents, 'bi-play-circle', 'No events are currently ongoing.', 'ongoingEventsTable');
-                $renderEventsTable('Past Events', $pastEvents, 'bi-clock-history', 'No past events yet.', 'pastEventsTable');
                 $renderEventsTable('Upcoming Events', $upcomingEvents, 'bi-calendar-x', 'No upcoming federation events yet.', 'upcomingEventsTable');
+                $renderEventsTable('Past Events', $pastEvents, 'bi-clock-history', 'No past events yet.', 'pastEventsTable');
             ?>
         </main>
     </div>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="../../js/table-tools.js"></script>
+    <?php sked_render_autoshow_modals_script(); ?>
+    <script src="../../js/table-tools.js?v=4"></script>
     <script>
-        ['ongoingEventsTable', 'pastEventsTable', 'upcomingEventsTable'].forEach(function (id) {
+        ['ongoingEventsTable', 'upcomingEventsTable', 'pastEventsTable'].forEach(function (id) {
             new SkedTableTools('#' + id, { pageSize: 8, filters: [{ label: 'Scope' }, { label: 'Type' }, { label: 'Status' }] });
         });
     </script>

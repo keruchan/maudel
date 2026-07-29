@@ -58,7 +58,7 @@ $polls = ($isVerified && $barangayId > 0) ? sked_open_polls_for_youth($barangayI
     <link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="../../css/dashboard.css?v=1">
+    <link rel="stylesheet" href="../../css/dashboard.css?v=2">
     <style>.poll-bar{height:8px;border-radius:999px;background:#e5e7f2;overflow:hidden;} .poll-bar>div{height:100%;background:linear-gradient(90deg,#4338ca,#818cf8);}</style>
 </head>
 <body>
@@ -105,6 +105,9 @@ $polls = ($isVerified && $barangayId > 0) ? sked_open_polls_for_youth($barangayI
                             <div class="registry-card h-100">
                                 <span class="registry-icon"><i class="bi bi-bar-chart-steps"></i></span>
                                 <h3><?php echo e((string) $p['question']); ?></h3>
+                                <?php if (!empty($p['closes_at'])): ?>
+                                    <p class="small text-secondary mb-2"><i class="bi bi-clock me-1"></i>Closes <?php echo e(date('M j, Y g:i A', strtotime((string) $p['closes_at']))); ?></p>
+                                <?php endif; ?>
 
                                 <?php if ($myVote !== null): ?>
                                     <p class="small text-success mb-2"><i class="bi bi-check-circle-fill me-1"></i>You voted &mdash; thanks for your input!</p>

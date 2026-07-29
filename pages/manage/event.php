@@ -63,12 +63,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
         $flash = ['type' => 'success', 'msg' => 'All pending participants marked present.'];
+    } elseif ($action === 'accept_registration') {
+        $r = sked_accept_registration($userId, $eventId, (int) ($_POST['user_id'] ?? 0));
+        if ($r['ok']) {
+            $flash = !empty($r['exceeds_capacity'])
+                ? ['type' => 'warning', 'msg' => 'Registration confirmed, but this now exceeds the expected capacity (' . (int) $r['confirmed_count'] . '/' . (int) $r['capacity'] . ').']
+                : ['type' => 'success', 'msg' => 'Registration confirmed.'];
+        } else {
+            $flash = ['type' => 'danger', 'msg' => e($r['error'])];
+        }
+    } elseif ($action === 'decline_registration') {
+        $r = sked_decline_registration($userId, $eventId, (int) ($_POST['user_id'] ?? 0));
+        $flash = $r['ok'] ? ['type' => 'info', 'msg' => 'Registration declined.'] : ['type' => 'danger', 'msg' => e($r['error'])];
     }
     $event = sked_get_event($eventId); // refresh after mutation
 }
 
 $roster = sked_event_roster($eventId);
 $counts = sked_participant_counts($eventId);
+$confirmedCount = $counts['registered'] + $counts['attended'];
+$capacity = $event['capacity'] !== null ? (int) $event['capacity'] : null;
+$acceptingWouldExceedCapacity = $capacity !== null && ($confirmedCount + 1) > $capacity;
 $rating = sked_event_rating($eventId);
 $evalBreakdown = sked_event_evaluation_breakdown($eventId);
 $nextStatuses = sked_event_next_statuses((string) $event['status']);
@@ -93,7 +108,7 @@ $turnoutPrediction = in_array($event['status'], ['draft', 'published', 'confirme
     <link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="../../css/dashboard.css?v=1">
+    <link rel="stylesheet" href="../../css/dashboard.css?v=2">
     <style>
         .level-progress { height:8px; border-radius:999px; background:#e5e7f2; overflow:hidden; }
         .level-progress > div { height:100%; background:linear-gradient(90deg,#4338ca,#818cf8); }
@@ -143,7 +158,15 @@ $turnoutPrediction = in_array($event['status'], ['draft', 'published', 'confirme
                 <div class="col-lg-8">
                     <div class="docket-panel">
                         <div class="section-heading">
-                            <h2>Participants</h2>
+                            <div>
+                                <h2>Participants</h2>
+                                <?php if ($event['type'] === 'register'): ?>
+                                    <span class="section-note">
+                                        <?php echo $confirmedCount; ?><?php echo $capacity !== null ? ' / ' . $capacity : ''; ?> confirmed
+                                        <?php if ($counts['pending'] > 0): ?> &middot; <span class="text-warning-emphasis fw-semibold"><?php echo (int) $counts['pending']; ?> pending</span><?php endif; ?>
+                                    </span>
+                                <?php endif; ?>
+                            </div>
                             <?php if ($canAttend && !empty($roster)): ?>
                             <form method="post" action="event.php?id=<?php echo $eventId; ?>" class="m-0">
                                 <input type="hidden" name="csrf_token" value="<?php echo e((string) $_SESSION['csrf_mevent_token']); ?>">
@@ -168,20 +191,41 @@ $turnoutPrediction = in_array($event['status'], ['draft', 'published', 'confirme
                             <a class="btn btn-sm btn-outline-primary" href="event_qr.php?id=<?php echo $eventId; ?>"><i class="bi bi-qr-code me-1"></i>Event QR<?php echo (int) ($event['self_scan_enabled'] ?? 0) === 1 ? ' (on)' : ''; ?></a>
                         </div>
                         <?php endif; ?>
+                        <?php
+                            $hasPending = $counts['pending'] > 0;
+                            $statusBadgeClass = static function (string $s): string {
+                                return match ($s) {
+                                    'attended' => 'success',
+                                    'no_show' => 'danger',
+                                    'pending' => 'warning',
+                                    'cancelled', 'declined' => 'secondary',
+                                    default => 'primary',
+                                };
+                            };
+                            $capacityConfirmMsg = 'The expected capacity for this event is ' . $capacity . '. There are already ' . $confirmedCount . ' confirmed — accepting this one will bring it to ' . ($confirmedCount + 1) . '. Proceed anyway?';
+                        ?>
                         <?php if (empty($roster)): ?>
                             <div class="text-center text-secondary py-5"><i class="bi bi-people fs-1 d-block mb-2"></i>No participants yet.</div>
                         <?php else: ?>
                             <div class="table-responsive"><table class="table align-middle" id="rosterTable">
-                                <thead><tr><th>Name</th><?php if ((int) $event['is_team_sport'] === 1): ?><th>Team</th><?php endif; ?><th>Status</th><?php if ($canAttend): ?><th class="text-end">Attendance</th><?php endif; ?></tr></thead>
+                                <thead><tr><th>Name</th><?php if ((int) $event['is_team_sport'] === 1): ?><th>Team</th><?php endif; ?><th>Status</th><?php if ($canAttend || $hasPending): ?><th class="text-end">Action</th><?php endif; ?></tr></thead>
                                 <tbody>
                                 <?php foreach ($roster as $p): ?>
                                     <tr>
                                         <td><div class="fw-semibold"><?php echo e((string) $p['name']); ?></div><div class="small text-secondary">@<?php echo e((string) $p['username']); ?></div></td>
                                         <?php if ((int) $event['is_team_sport'] === 1): ?><td class="small"><?php echo e((string) ($p['team_name'] ?? '—')); ?></td><?php endif; ?>
-                                        <td><span class="badge text-bg-<?php echo $p['status'] === 'attended' ? 'success' : ($p['status'] === 'no_show' ? 'danger' : ($p['status'] === 'cancelled' ? 'secondary' : 'primary')); ?> text-capitalize"><?php echo e(str_replace('_', ' ', (string) $p['status'])); ?></span></td>
-                                        <?php if ($canAttend): ?>
+                                        <td><span class="badge text-bg-<?php echo $statusBadgeClass((string) $p['status']); ?> text-capitalize"><?php echo e(str_replace('_', ' ', (string) $p['status'])); ?></span></td>
+                                        <?php if ($canAttend || $hasPending): ?>
                                         <td class="text-end">
-                                            <?php if ($p['status'] !== 'cancelled'): ?>
+                                            <?php if ($p['status'] === 'pending'): ?>
+                                            <form method="post" action="event.php?id=<?php echo $eventId; ?>" class="d-inline">
+                                                <input type="hidden" name="csrf_token" value="<?php echo e((string) $_SESSION['csrf_mevent_token']); ?>">
+                                                <input type="hidden" name="event_id" value="<?php echo $eventId; ?>">
+                                                <input type="hidden" name="user_id" value="<?php echo (int) $p['user_id']; ?>">
+                                                <button type="submit" name="action" value="accept_registration" class="btn btn-sm btn-outline-success" title="Accept"<?php echo $acceptingWouldExceedCapacity ? ' onclick="return confirm(' . e(json_encode($capacityConfirmMsg)) . ')"' : ''; ?>><i class="bi bi-check-lg me-1"></i>Accept</button>
+                                                <button type="submit" name="action" value="decline_registration" class="btn btn-sm btn-outline-danger" title="Decline"><i class="bi bi-x-lg me-1"></i>Decline</button>
+                                            </form>
+                                            <?php elseif ($canAttend && !in_array($p['status'], ['cancelled', 'declined'], true)): ?>
                                             <form method="post" action="event.php?id=<?php echo $eventId; ?>" class="d-inline">
                                                 <input type="hidden" name="csrf_token" value="<?php echo e((string) $_SESSION['csrf_mevent_token']); ?>">
                                                 <input type="hidden" name="event_id" value="<?php echo $eventId; ?>">
@@ -272,7 +316,7 @@ $turnoutPrediction = in_array($event['status'], ['draft', 'published', 'confirme
         </main>
     </div>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="../../js/table-tools.js"></script>
+    <script src="../../js/table-tools.js?v=4"></script>
     <script>
         new SkedTableTools('#rosterTable', { pageSize: 12, filters: [{ label: 'Status' }] });
     </script>

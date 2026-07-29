@@ -310,33 +310,6 @@ function sked_render_analytics_body(array $bundle, array $distributions, array $
                 <div class="row g-3 mb-3">
                     <div class="col-12">
                         <section class="docket-panel">
-                            <div class="section-heading"><h2 class="h6 mb-0">Overall sentiment</h2><span class="section-note"><?php echo (int) $sentiment['total']; ?> entries analyzed</span></div>
-                            <div class="sentiment-headline tone-<?php echo e((string) $sentiment['overall']); ?> mb-3">
-                                <span class="sent-icon"><i class="bi <?php echo e((string) $sentimentTone['icon']); ?>"></i></span>
-                                <div>
-                                    <div class="sent-title"><?php echo e((string) $sentimentTone['label']); ?></div>
-                                    <div class="sent-sub"><?php echo (int) $sentiment['positive']; ?> positive &middot; <?php echo (int) $sentiment['neutral']; ?> neutral &middot; <?php echo (int) $sentiment['negative']; ?> negative</div>
-                                </div>
-                            </div>
-                            <div class="sentiment-bar" role="img" aria-label="Sentiment breakdown: <?php echo e((string) $sentiment['pct']['positive']); ?>% positive, <?php echo e((string) $sentiment['pct']['neutral']); ?>% neutral, <?php echo e((string) $sentiment['pct']['negative']); ?>% negative">
-                                <?php if ($sentiment['pct']['positive'] > 0): ?><div class="seg seg-positive" style="width:<?php echo e((string) $sentiment['pct']['positive']); ?>%;"><?php if ($sentiment['pct']['positive'] >= 10) { echo e((string) $sentiment['pct']['positive']) . '%'; } ?></div><?php endif; ?>
-                                <?php if ($sentiment['pct']['neutral'] > 0): ?><div class="seg seg-neutral" style="width:<?php echo e((string) $sentiment['pct']['neutral']); ?>%;"><?php if ($sentiment['pct']['neutral'] >= 10) { echo e((string) $sentiment['pct']['neutral']) . '%'; } ?></div><?php endif; ?>
-                                <?php if ($sentiment['pct']['negative'] > 0): ?><div class="seg seg-negative" style="width:<?php echo e((string) $sentiment['pct']['negative']); ?>%;"><?php if ($sentiment['pct']['negative'] >= 10) { echo e((string) $sentiment['pct']['negative']) . '%'; } ?></div><?php endif; ?>
-                            </div>
-                            <div class="sentiment-legend" id="sentimentLegend">
-                                <button type="button" class="lg-key is-active" data-sent-filter="all"><span class="lg-dot all"></span>All &middot; <?php echo (int) $sentiment['total']; ?></button>
-                                <button type="button" class="lg-key" data-sent-filter="positive"><span class="lg-dot positive"></span>Positive &middot; <?php echo e((string) $sentiment['pct']['positive']); ?>%</button>
-                                <button type="button" class="lg-key" data-sent-filter="neutral"><span class="lg-dot neutral"></span>Neutral &middot; <?php echo e((string) $sentiment['pct']['neutral']); ?>%</button>
-                                <button type="button" class="lg-key" data-sent-filter="negative"><span class="lg-dot negative"></span>Negative &middot; <?php echo e((string) $sentiment['pct']['negative']); ?>%</button>
-                            </div>
-                            <p class="small text-secondary mt-2 mb-0"><i class="bi bi-hand-index me-1"></i>Click a tone above to read every comment scored that way.</p>
-                        </section>
-                    </div>
-                </div>
-
-                <div class="row g-3 mb-3">
-                    <div class="col-12">
-                        <section class="docket-panel">
                             <div class="section-heading"><h2 class="h6 mb-0">Most-mentioned words</h2><span class="section-note">Feedback &amp; KK Suggestions</span></div>
                             <?php if (empty($cloudWords)): ?>
                                 <div class="word-cloud-empty">Not enough text yet to surface common words.</div>
@@ -369,6 +342,33 @@ function sked_render_analytics_body(array $bundle, array $distributions, array $
                                     <strong>Click any word</strong> to read the comments it came from.
                                 </p>
                             <?php endif; ?>
+                        </section>
+                    </div>
+                </div>
+
+                <div class="row g-3 mb-3">
+                    <div class="col-12">
+                        <section class="docket-panel">
+                            <div class="section-heading"><h2 class="h6 mb-0">Overall sentiment</h2><span class="section-note"><?php echo (int) $sentiment['total']; ?> entries analyzed</span></div>
+                            <div class="sentiment-headline tone-<?php echo e((string) $sentiment['overall']); ?> mb-3">
+                                <span class="sent-icon"><i class="bi <?php echo e((string) $sentimentTone['icon']); ?>"></i></span>
+                                <div>
+                                    <div class="sent-title"><?php echo e((string) $sentimentTone['label']); ?></div>
+                                    <div class="sent-sub"><?php echo (int) $sentiment['positive']; ?> positive &middot; <?php echo (int) $sentiment['neutral']; ?> neutral &middot; <?php echo (int) $sentiment['negative']; ?> negative</div>
+                                </div>
+                            </div>
+                            <div class="sentiment-bar" role="img" aria-label="Sentiment breakdown: <?php echo e((string) $sentiment['pct']['positive']); ?>% positive, <?php echo e((string) $sentiment['pct']['neutral']); ?>% neutral, <?php echo e((string) $sentiment['pct']['negative']); ?>% negative">
+                                <?php if ($sentiment['pct']['positive'] > 0): ?><div class="seg seg-positive" style="width:<?php echo e((string) $sentiment['pct']['positive']); ?>%;"><?php if ($sentiment['pct']['positive'] >= 10) { echo e((string) $sentiment['pct']['positive']) . '%'; } ?></div><?php endif; ?>
+                                <?php if ($sentiment['pct']['neutral'] > 0): ?><div class="seg seg-neutral" style="width:<?php echo e((string) $sentiment['pct']['neutral']); ?>%;"><?php if ($sentiment['pct']['neutral'] >= 10) { echo e((string) $sentiment['pct']['neutral']) . '%'; } ?></div><?php endif; ?>
+                                <?php if ($sentiment['pct']['negative'] > 0): ?><div class="seg seg-negative" style="width:<?php echo e((string) $sentiment['pct']['negative']); ?>%;"><?php if ($sentiment['pct']['negative'] >= 10) { echo e((string) $sentiment['pct']['negative']) . '%'; } ?></div><?php endif; ?>
+                            </div>
+                            <div class="sentiment-legend" id="sentimentLegend">
+                                <button type="button" class="lg-key is-active" data-sent-filter="all"><span class="lg-dot all"></span>All &middot; <?php echo (int) $sentiment['total']; ?></button>
+                                <button type="button" class="lg-key" data-sent-filter="positive"><span class="lg-dot positive"></span>Positive &middot; <?php echo e((string) $sentiment['pct']['positive']); ?>%</button>
+                                <button type="button" class="lg-key" data-sent-filter="neutral"><span class="lg-dot neutral"></span>Neutral &middot; <?php echo e((string) $sentiment['pct']['neutral']); ?>%</button>
+                                <button type="button" class="lg-key" data-sent-filter="negative"><span class="lg-dot negative"></span>Negative &middot; <?php echo e((string) $sentiment['pct']['negative']); ?>%</button>
+                            </div>
+                            <p class="small text-secondary mt-2 mb-0"><i class="bi bi-hand-index me-1"></i>Click a tone above to read every comment scored that way.</p>
                         </section>
                     </div>
                 </div>

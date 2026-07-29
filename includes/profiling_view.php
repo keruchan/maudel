@@ -199,10 +199,6 @@ function sked_render_kk_profile_form(array $v, array $identity, bool $disabled, 
                     <label class="form-label">Purok</label>
                     <input type="text" class="form-control" value="<?php echo e((string) ($identity['purok'] ?? '') ?: '—'); ?>" disabled>
                 </div>
-                <div class="col-md-12">
-                    <label for="facebook_name" class="form-label">Facebook Account Name <span class="text-danger">*</span></label>
-                    <input type="text" class="form-control" id="facebook_name" name="facebook_name" maxlength="100" placeholder="Halimbawa: Juan Dela Cruz" value="<?php echo e((string) ($v['facebook_name'] ?? '')); ?>"<?php echo $dis; ?> required>
-                </div>
             </div>
             <p class="text-secondary small mt-2 mb-0"><i class="bi bi-lock-fill me-1"></i>Name, birthday, sex, email, contact number, and address come from the registered account. To correct them, contact the Barangay SK.</p>
         </div>

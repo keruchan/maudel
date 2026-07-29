@@ -228,6 +228,13 @@ function sked_submit_turnover_report(array $outgoingPpsk, string $newName, strin
         }
 
         $pdo->commit();
+        sked_notify_role(
+            'dilg',
+            'role_change',
+            'Turnover report submitted',
+            (string) ($outgoingPpsk['name'] ?? 'Outgoing PPSK') . ' submitted a turnover report for DILG review.',
+            '../dilg/turnover.php'
+        );
     } catch (Throwable $e) {
         $pdo->rollBack();
         error_log('sked_submit_turnover_report failed: ' . $e->getMessage());

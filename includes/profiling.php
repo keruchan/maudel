@@ -64,13 +64,11 @@ function sked_profiling_options(): array
             'Self-Employed (Sa sarili nagtatrabaho)',
             'Currently Looking for a Job (Kasalukuyang Naghahanap ng Trabaho)',
             'Not Interested Looking for a Job (Hindi Interesadong sa Paghahanap ng Trabaho)',
-            'N/A (Hindi Naaangkop)',
         ],
         'kk_assembly_absence_reason' => [
             'There was no KK Assembly meeting (Walang inilunsad na KK Assembly meeting)',
             'Not interested to attend (Hindi interesadong dumalo)',
             'I am not aware of KK Assembly (Hindi ko batid na may KK Assembly)',
-            'N/A (Hindi Naaangkop)',
         ],
     ];
 }
@@ -97,7 +95,29 @@ function sked_num_children_options(): array
 /** How many times attended KK Assembly (only asked when attended = yes). */
 function sked_kk_assembly_times_options(): array
 {
-    return [0 => '0 - 0 (Wala/Hindi)', 1 => '1 - One (Isa)', 2 => '2 - Two (Dalawa)'];
+    return [
+        1 => '1-2 times',
+        3 => '3-4 times',
+        5 => '5 above times',
+    ];
+}
+
+function sked_normalize_kk_assembly_times_value($value): string
+{
+    if ($value === null || $value === '') {
+        return '';
+    }
+    $n = (int) $value;
+    if ($n >= 5) {
+        return '5';
+    }
+    if ($n >= 3) {
+        return '3';
+    }
+    if ($n >= 1) {
+        return '1';
+    }
+    return '';
 }
 
 /** Youth Classification (multi-select checkboxes — a youth may hold more than one). */
@@ -116,10 +136,25 @@ function sked_youth_classifications(): array
 function sked_specific_needs_options(): array
 {
     return [
-        'Person with Disability (Kabataang may Kapansanan)',
-        'Children in Conflict with Law (Kabataang Salungat sa Batas)',
-        'Indigenous People (Mga Katutubo)',
+        'Person with Disability',
+        'Children in Conflict with Law',
+        'Indigenous People',
     ];
+}
+
+function sked_normalize_specific_need(string $need): string
+{
+    $need = trim($need);
+    if (str_starts_with($need, 'Person with Disability')) {
+        return 'Person with Disability';
+    }
+    if (str_starts_with($need, 'Children in Conflict')) {
+        return 'Children in Conflict with Law';
+    }
+    if (str_starts_with($need, 'Indigenous People')) {
+        return 'Indigenous People';
+    }
+    return $need;
 }
 
 /** Scholarship (multi-select checkboxes + "Others" free text). */
@@ -141,10 +176,18 @@ function sked_scholarship_options(): array
 function sked_interest_categories(): array
 {
     return [
-        'Health', 'Education', 'Economic Empowerment', 'Social Inclusion and Equity',
+        'Health', 'Education', 'Economic Empowerment', 'Social Inclusion & Equity',
         'Peace Building and Security', 'Governance', 'Active Citizenship',
         'Environment', 'Global Mobility', 'Agriculture',
     ];
+}
+
+function sked_normalize_interest_category(string $category): string
+{
+    return match (trim($category)) {
+        'Social Inclusion and Equity' => 'Social Inclusion & Equity',
+        default => trim($category),
+    };
 }
 
 /** Preferred programs/projects/activities (multi-select, choose 3 to 5, + "Other" free text). */
@@ -298,7 +341,8 @@ function sked_youth_age_group(?int $age): string
 /**
  * Municipality-wide youth roster summary, one row per barangay (P15,
  * "Consolidated Profiles" for PPSK/DILG oversight). "Active youth" means
- * verified (status='active'); "profiled" means they've saved a KK profile.
+ * verified (status='active' and verified=1); "profiled" means a verified
+ * youth has saved a KK profile.
  *
  * @return array<int,array{barangay_id:int,barangay_name:string,total_youth:int,active_youth:int,profiled_count:int}>
  */
@@ -307,8 +351,8 @@ function sked_youth_profile_summary(): array
     $stmt = sked_db()->query(
         "SELECT b.id AS barangay_id, b.name AS barangay_name,
                 COUNT(DISTINCT u.id) AS total_youth,
-                COALESCE(SUM(CASE WHEN u.status = 'active' THEN 1 ELSE 0 END), 0) AS active_youth,
-                COUNT(DISTINCT yp.user_id) AS profiled_count
+                COALESCE(SUM(CASE WHEN u.status = 'active' AND u.verified = 1 THEN 1 ELSE 0 END), 0) AS active_youth,
+                COUNT(DISTINCT CASE WHEN u.status = 'active' AND u.verified = 1 THEN yp.user_id END) AS profiled_count
            FROM barangays b
       LEFT JOIN users u ON u.barangay_id = b.id AND u.role = 'youth' AND u.status IN ('pending', 'active')
       LEFT JOIN youth_profiles yp ON yp.user_id = u.id
@@ -355,7 +399,7 @@ function sked_profile_view_defaults(?array $profile): array
     if ($profile === null) {
         return [
             'consent_agreed' => false, 'civil_status' => '', 'gender_identity' => '',
-            'lgbtqia_member' => false, 'facebook_name' => '', 'num_children' => '',
+            'lgbtqia_member' => false, 'num_children' => '',
             'classifications' => [], 'specific_needs' => [], 'educational_attainment' => '',
             'scholarships' => [], 'scholarship_other' => '', 'work_status' => '', 'valid_id' => '',
             'sk_voter' => '', 'national_voter' => '', 'voted_last_election' => '',
@@ -368,10 +412,9 @@ function sked_profile_view_defaults(?array $profile): array
         'civil_status' => (string) ($profile['civil_status'] ?? ''),
         'gender_identity' => (string) ($profile['gender_identity'] ?? ''),
         'lgbtqia_member' => !empty($profile['lgbtqia_member']),
-        'facebook_name' => (string) ($profile['facebook_name'] ?? ''),
         'num_children' => $profile['num_children'] !== null ? (string) (int) $profile['num_children'] : '',
         'classifications' => $profile['classifications'] ?? [],
-        'specific_needs' => $profile['specific_needs'] ?? [],
+        'specific_needs' => array_map('sked_normalize_specific_need', $profile['specific_needs'] ?? []),
         'educational_attainment' => (string) ($profile['educational_attainment'] ?? ''),
         'scholarships' => $profile['scholarships'] ?? [],
         'scholarship_other' => (string) ($profile['scholarship_other'] ?? ''),
@@ -381,9 +424,9 @@ function sked_profile_view_defaults(?array $profile): array
         'national_voter' => $boolStr($profile['national_voter'] ?? null),
         'voted_last_election' => $boolStr($profile['voted_last_election'] ?? null),
         'attended_kk_assembly' => $boolStr($profile['attended_kk_assembly'] ?? null),
-        'kk_assembly_times' => $profile['kk_assembly_times'] !== null ? (string) (int) $profile['kk_assembly_times'] : '',
+        'kk_assembly_times' => sked_normalize_kk_assembly_times_value($profile['kk_assembly_times'] ?? null),
         'kk_assembly_absence_reason' => (string) ($profile['kk_assembly_absence_reason'] ?? ''),
-        'interests' => $profile['interests'] ?? [],
+        'interests' => array_map('sked_normalize_interest_category', $profile['interests'] ?? []),
         'preferred_programs' => $profile['preferred_programs'] ?? [],
         'preferred_programs_other' => (string) ($profile['preferred_programs_other'] ?? ''),
         'kk_suggestions' => (string) ($profile['remarks'] ?? ''),
@@ -406,6 +449,14 @@ function sked_save_youth_profile(int $userId, array $data, int $actorId = 0, str
         return ['ok' => false, 'errors' => ['Invalid account.'], 'points_awarded' => false];
     }
 
+    $account = sked_find_user_by_id($userId);
+    if ($account === null || ($account['role'] ?? '') !== 'youth') {
+        return ['ok' => false, 'errors' => ['Invalid youth account.'], 'points_awarded' => false];
+    }
+    if (($account['status'] ?? '') !== 'active' || empty($account['verified'])) {
+        return ['ok' => false, 'errors' => ['KK profiling unlocks once the youth account is verified by the Barangay SK.'], 'points_awarded' => false];
+    }
+
     $errors = [];
     $options = sked_profiling_options();
 
@@ -426,11 +477,6 @@ function sked_save_youth_profile(int $userId, array $data, int $actorId = 0, str
         $errors[] = 'Please select your gender identity.';
     }
     $lgbtqiaMember = !empty($data['lgbtqia_member']) ? 1 : 0;
-
-    $facebookName = trim((string) ($data['facebook_name'] ?? ''));
-    if ($facebookName === '') {
-        $errors[] = 'Facebook account name is required.';
-    }
 
     $numChildren = (string) ($data['num_children'] ?? '');
     if (!array_key_exists((int) $numChildren, sked_num_children_options()) || $numChildren === '') {
@@ -493,6 +539,9 @@ function sked_save_youth_profile(int $userId, array $data, int $actorId = 0, str
     $specificNeeds = [];
     if (in_array(SKED_CLASSIFICATION_SPECIFIC_NEEDS, $classifications, true)) {
         $specificNeeds = array_values(array_intersect(sked_specific_needs_options(), array_map('strval', (array) ($data['specific_needs'] ?? []))));
+        if (empty($specificNeeds)) {
+            $errors[] = 'Please select the specific-needs type.';
+        }
     }
 
     // --- Scholarship (multi + "Others" free text) ---
@@ -508,7 +557,8 @@ function sked_save_youth_profile(int $userId, array $data, int $actorId = 0, str
 
     // --- Center of Youth Participation (choose 1 to 3) ---
     $allInterests = sked_interest_categories();
-    $interests = array_values(array_intersect($allInterests, array_map('strval', (array) ($data['interests'] ?? []))));
+    $interestInput = array_map(static fn ($v) => sked_normalize_interest_category((string) $v), (array) ($data['interests'] ?? []));
+    $interests = array_values(array_intersect($allInterests, $interestInput));
     if (count($interests) < 1 || count($interests) > 3) {
         $errors[] = 'Please choose 1 to 3 centers of youth participation.';
     }
@@ -578,7 +628,7 @@ function sked_save_youth_profile(int $userId, array $data, int $actorId = 0, str
             'civil_status' => $civilStatus,
             'gender_identity' => $genderIdentity,
             'lgbtqia_member' => $lgbtqiaMember,
-            'facebook_name' => $facebookName,
+            'facebook_name' => null,
             'num_children' => $numChildren,
             'educational_attainment' => $educationalAttainment,
             'work_status' => $workStatus,

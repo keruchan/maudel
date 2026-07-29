@@ -64,7 +64,7 @@ $history = (!$isDemo) ? sked_feedback_for_youth($userId) : [];
     <link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="../../css/dashboard.css?v=1">
+    <link rel="stylesheet" href="../../css/dashboard.css?v=2">
 </head>
 <body>
     <a href="#main-content" class="skip-link">Skip to main content</a>
@@ -77,7 +77,7 @@ $history = (!$isDemo) ? sked_feedback_for_youth($userId) : [];
                     <div>
                         <div class="eyebrow">Youth Portal &middot; <?php echo e($todayLabel); ?></div>
                         <h1 class="page-title">Feedback / Concerns</h1>
-                        <p class="text-secondary meta-copy mb-0">Send a note straight to your Barangay SK — a suggestion, a concern, anything on your mind.</p>
+                        <p class="text-secondary meta-copy mb-0">Send an anonymous note to your Barangay SK. They can distinguish repeat senders, but your name is hidden.</p>
                     </div>
                     <div class="d-flex align-items-center gap-2">
                         <?php render_sked_notification_bell('header'); ?><span class="officer-chip">
@@ -95,13 +95,13 @@ $history = (!$isDemo) ? sked_feedback_for_youth($userId) : [];
             <div class="row g-4">
                 <div class="col-lg-5">
                     <div class="docket-panel">
-                        <div class="section-heading"><h2>Send a Message</h2></div>
+                        <div class="section-heading"><h2>Send Anonymous Feedback</h2></div>
                         <form method="post" action="feedback.php" novalidate>
                             <input type="hidden" name="csrf_token" value="<?php echo e((string) $_SESSION['csrf_feedback_token']); ?>">
                             <?php sked_render_form_errors($formErrors, 'The message could not be sent:'); ?>
                             <div class="mb-3">
                                 <label for="message" class="form-label">Your message</label>
-                                <textarea class="form-control" id="message" name="message" rows="6" maxlength="2000" placeholder="Share a suggestion or concern with your Barangay SK…" required><?php echo e(sked_old('message')); ?></textarea>
+                                <textarea class="form-control" id="message" name="message" rows="6" maxlength="2000" placeholder="Share a suggestion or concern anonymously..." required><?php echo e(sked_old('message')); ?></textarea>
                             </div>
                             <button type="submit" class="btn btn-sked w-100"><i class="bi bi-send me-1"></i> Send to my SK</button>
                         </form>

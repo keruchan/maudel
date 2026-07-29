@@ -300,8 +300,9 @@ function sked_seed_education_for_age(int $age): string
 function sked_seed_work_status_for_age(int $age): string
 {
     if ($age <= 20) return sked_seed_rand_weighted([
-        'N/A (Hindi Naaangkop)' => 45, 'Currently Looking for a Job (Kasalukuyang Naghahanap ng Trabaho)' => 15,
+        'Currently Looking for a Job (Kasalukuyang Naghahanap ng Trabaho)' => 25,
         'Unemployed (Walang Trabaho)' => 20, 'Employed (Empleyado)' => 20,
+        'Not Interested Looking for a Job (Hindi Interesadong sa Paghahanap ng Trabaho)' => 35,
     ]);
     return sked_seed_rand_weighted([
         'Employed (Empleyado)' => 45, 'Self-Employed (Sa sarili nagtatrabaho)' => 15,
@@ -365,7 +366,7 @@ foreach ($youthsByBarangay as $bgyId => $list) {
             'national_voter' => $age >= 18 ? (mt_rand(1, 100) <= 80 ? '1' : '0') : '0',
             'voted_last_election' => $age >= 18 ? (mt_rand(1, 100) <= 70 ? '1' : '0') : '0',
             'attended_kk_assembly' => $attended,
-            'kk_assembly_times' => $attended === '1' ? mt_rand(1, 2) : null,
+            'kk_assembly_times' => $attended === '1' ? sked_seed_rand_pick([1, 3, 5]) : null,
             'kk_assembly_absence_reason' => $attended === '0' ? sked_seed_rand_pick($profilingOptions['kk_assembly_absence_reason']) : null,
             'classifications' => $classifications,
             'specific_needs' => $specificNeeds,
@@ -376,8 +377,6 @@ foreach ($youthsByBarangay as $bgyId => $list) {
             'preferred_programs_other' => '',
             'kk_suggestions' => mt_rand(1, 100) <= 25 ? 'Sana po madagdagan ang mga sports at livelihood program para sa amin.' : '',
         ];
-        $data['facebook_name'] = strtolower(str_replace(' ', '.', $sex === 'male' ? sked_seed_rand_pick($givenMale) : sked_seed_rand_pick($givenFemale))) . mt_rand(10, 99);
-
         $res = sked_save_youth_profile($y['id'], $data, 0, 'youth');
         if ($res['ok']) { $profilesCreated++; }
     }
@@ -402,7 +401,7 @@ $barangayEventTemplates = [
     ['Blood Letting Activity', 'Health'],
     ['Career Orientation Seminar', 'Education'],
     ['Disaster Preparedness Drill', 'Peace Building and Security'],
-    ['Creative Arts Contest', 'Social Inclusion and Equity'],
+    ['Creative Arts Contest', 'Social Inclusion & Equity'],
     ['Barangay Feeding Program', 'Health'],
 ];
 $fedEventTemplates = [
@@ -601,7 +600,7 @@ echo "Federation (interbarangay/municipal) events created: {$fedEventsCreated}, 
 $pollTemplates = [
     ['What youth program should we prioritize next quarter?', 'Governance', ['Sports & Wellness', 'Livelihood Training', 'Environmental Clean-up', 'Educational Assistance']],
     ['Which day works best for the next KK Assembly?', 'Governance', ['Saturday morning', 'Saturday afternoon', 'Sunday morning', 'Sunday afternoon']],
-    ['What should our next community project focus on?', 'Social Inclusion and Equity', ['Youth with disabilities support', 'Solo parent assistance', 'Out-of-school youth outreach', 'Senior-youth bridge program']],
+    ['What should our next community project focus on?', 'Social Inclusion & Equity', ['Youth with disabilities support', 'Solo parent assistance', 'Out-of-school youth outreach', 'Senior-youth bridge program']],
     ['Preferred venue for the Youth Sports Fest?', 'Health', ['Barangay covered court', 'Municipal gym', 'School grounds']],
 ];
 $pollsCreated = 0;

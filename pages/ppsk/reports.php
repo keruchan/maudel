@@ -3,9 +3,10 @@
  * ============================================================
  * File     : pages/ppsk/reports.php
  * Project  : SKed - Youth Profiling System for Event Management
- * Purpose  : PPSK reporting hub (P7, spec 4.2). Review SK monthly reports
- *            submitted by barangays, and submit inter-barangay event
- *            reports + meeting minutes up to DILG.
+ * Purpose  : PPSK reporting hub (P7, spec 4.2). Submit inter-barangay event
+ *            reports + meeting minutes up to DILG. PPSK no longer reviews
+ *            SK monthly reports — those, like everything else here, now go
+ *            straight to DILG (see includes/reports.php).
  * ============================================================
  */
 
@@ -13,7 +14,6 @@ require_once __DIR__ . '/../../config/config.php';
 require_once __DIR__ . '/../../includes/auth.php';
 require_once __DIR__ . '/../../includes/navigation.php';
 require_once __DIR__ . '/../../includes/view.php';
-require_once __DIR__ . '/../../includes/barangays.php';
 require_once __DIR__ . '/../../includes/reports.php';
 
 require_role('ppsk');
@@ -32,16 +32,8 @@ if (empty($_SESSION['csrf_preports_token'])) {
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $token = (string) ($_POST['csrf_token'] ?? '');
-    $formName = (string) ($_POST['form'] ?? '');
     if (!hash_equals((string) $_SESSION['csrf_preports_token'], $token)) {
-        if ($formName === 'review') {
-            $flash = ['type' => 'danger', 'msg' => 'Security validation failed. Please try again.'];
-        } else {
-            $formErrors = ['Security validation failed. Please try again.'];
-        }
-    } elseif ($formName === 'review') {
-        $ok = sked_mark_report_reviewed((int) ($_POST['report_id'] ?? 0), $ppskUserId);
-        $flash = $ok ? ['type' => 'success', 'msg' => 'Report marked reviewed.'] : ['type' => 'danger', 'msg' => 'Could not update that report.'];
+        $formErrors = ['Security validation failed. Please try again.'];
     } else {
         $creator = ['id' => $ppskUserId, 'role' => $role, 'name' => $displayName, 'barangay_id' => null];
         $type = (string) ($_POST['type'] ?? 'interbarangay');
@@ -56,8 +48,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 sked_form_retain(!empty($formErrors));
 
-$statusFilter = (string) ($_GET['status'] ?? '');
-$monthlyReports = sked_reports_for_role('ppsk', ['type' => 'monthly', 'status' => $statusFilter]);
 $submittedToDilg = sked_reports_for_role('dilg', []);
 // Only this PPSK's own submissions (interbarangay/minutes are PPSK-authored; dismissal recs shown separately elsewhere).
 $ownSubmissions = array_values(array_filter(
@@ -76,7 +66,7 @@ $ownSubmissions = array_values(array_filter(
     <link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="../../css/dashboard.css?v=1">
+    <link rel="stylesheet" href="../../css/dashboard.css?v=2">
 </head>
 <body>
     <a href="#main-content" class="skip-link">Skip to main content</a>
@@ -89,7 +79,7 @@ $ownSubmissions = array_values(array_filter(
                     <div>
                         <div class="eyebrow">Federation Office &middot; <?php echo e($todayLabel); ?></div>
                         <h1 class="page-title">Reports</h1>
-                        <p class="text-secondary meta-copy mb-0">Review SK monthly reports and submit federation reports to DILG.</p>
+                        <p class="text-secondary meta-copy mb-0">Submit inter-barangay event reports and minutes to DILG.</p>
                     </div>
                     <div class="d-flex align-items-center gap-2">
                         <?php render_sked_notification_bell('header'); ?><span class="officer-chip">
@@ -104,50 +94,7 @@ $ownSubmissions = array_values(array_filter(
             <?php if ($flash['msg'] !== ''): ?><div class="alert alert-<?php echo e($flash['type']); ?>" role="alert"><?php echo $flash['msg']; ?></div><?php endif; ?>
 
             <div class="row g-4 mb-4">
-                <div class="col-lg-7">
-                    <div class="docket-panel">
-                        <div class="section-heading">
-                            <h2>SK Monthly Reports</h2>
-                            <div class="d-flex gap-2">
-                                <a class="btn btn-sm <?php echo $statusFilter === '' ? 'btn-primary' : 'btn-outline-secondary'; ?>" href="reports.php">All</a>
-                                <a class="btn btn-sm <?php echo $statusFilter === 'submitted' ? 'btn-primary' : 'btn-outline-secondary'; ?>" href="reports.php?status=submitted">Pending</a>
-                                <a class="btn btn-sm <?php echo $statusFilter === 'reviewed' ? 'btn-primary' : 'btn-outline-secondary'; ?>" href="reports.php?status=reviewed">Reviewed</a>
-                            </div>
-                        </div>
-                        <?php if (empty($monthlyReports)): ?>
-                            <div class="text-center text-secondary py-4"><i class="bi bi-inbox fs-1 d-block mb-2"></i>No reports here.</div>
-                        <?php else: ?>
-                            <?php foreach ($monthlyReports as $r): ?>
-                                <div class="docket-row d-block">
-                                    <div class="d-flex justify-content-between align-items-start gap-2">
-                                        <div>
-                                            <div class="docket-title"><?php echo e(sked_barangay_name((int) $r['barangay_id'])); ?> &middot; <?php echo e(date('F Y', strtotime((string) $r['period_month'] . '-01'))); ?></div>
-                                            <div class="docket-sub"><?php echo e((string) $r['title']); ?> &mdash; <?php echo e((string) $r['submitted_by_name']); ?></div>
-                                        </div>
-                                        <span class="badge <?php echo $r['status'] === 'reviewed' ? 'text-bg-success' : 'text-bg-secondary'; ?>"><?php echo e(ucfirst((string) $r['status'])); ?></span>
-                                    </div>
-                                    <?php if (!empty($r['content'])): ?><p class="small text-secondary mt-2 mb-2"><?php echo nl2br(e((string) $r['content'])); ?></p><?php endif; ?>
-                                    <div class="action-buttons mt-1">
-                                        <a href="../manage/report_export.php?id=<?php echo (int) $r['id']; ?>" class="btn btn-sm btn-outline-secondary" target="_blank" title="Export report"><i class="bi bi-printer"></i><span>Export</span></a>
-                                        <?php if (!empty($r['attachment_file_path'])): ?>
-                                            <a href="../manage/report_file.php?id=<?php echo (int) $r['id']; ?>" class="btn btn-sm btn-outline-secondary" target="_blank" title="Open attachment"><i class="bi bi-paperclip"></i><span>Attachment</span></a>
-                                        <?php endif; ?>
-                                        <?php if ($r['status'] === 'submitted'): ?>
-                                        <form method="post" action="reports.php">
-                                            <input type="hidden" name="csrf_token" value="<?php echo e((string) $_SESSION['csrf_preports_token']); ?>">
-                                            <input type="hidden" name="form" value="review">
-                                            <input type="hidden" name="report_id" value="<?php echo (int) $r['id']; ?>">
-                                            <button type="submit" class="btn btn-sm btn-outline-primary"><i class="bi bi-check2-circle"></i><span>Mark reviewed</span></button>
-                                        </form>
-                                        <?php endif; ?>
-                                    </div>
-                                </div>
-                            <?php endforeach; ?>
-                        <?php endif; ?>
-                    </div>
-                </div>
-
-                <div class="col-lg-5">
+                <div class="col-lg-7 mx-auto">
                     <div class="docket-panel">
                         <div class="section-heading"><h2>Submit to DILG</h2></div>
                         <form method="post" action="reports.php" enctype="multipart/form-data" novalidate>
@@ -187,11 +134,11 @@ $ownSubmissions = array_values(array_filter(
                     <?php foreach ($ownSubmissions as $r): ?>
                         <div class="docket-row">
                             <div>
-                                <div class="docket-title"><?php echo e((string) $r['title']); ?> <span class="badge text-bg-light text-capitalize"><?php echo e((string) $r['type']); ?></span></div>
+                                <div class="docket-title"><?php echo e((string) $r['title']); ?> <span class="badge text-bg-light"><?php echo e(sked_report_type_label((string) $r['type'])); ?></span></div>
                                 <div class="docket-sub"><?php echo e(date('M j, Y', strtotime((string) $r['submitted_at']))); ?></div>
                             </div>
                             <div class="d-flex align-items-center gap-2 flex-wrap justify-content-end">
-                                <span class="badge <?php echo $r['status'] === 'reviewed' ? 'text-bg-success' : 'text-bg-secondary'; ?>"><?php echo e(ucfirst((string) $r['status'])); ?></span>
+                                <span class="badge <?php echo e(sked_report_status_badge_class((string) $r['status'])); ?>"><?php echo e(sked_report_status_label((string) $r['status'])); ?></span>
                                 <div class="action-buttons">
                                     <a href="../manage/report_export.php?id=<?php echo (int) $r['id']; ?>" class="btn btn-sm btn-outline-secondary" target="_blank" title="Export report"><i class="bi bi-printer"></i><span>Export</span></a>
                                     <?php if (!empty($r['attachment_file_path'])): ?>
@@ -199,6 +146,9 @@ $ownSubmissions = array_values(array_filter(
                                     <?php endif; ?>
                                 </div>
                             </div>
+                            <?php if (!empty($r['review_comments'])): ?>
+                                <div class="small text-secondary mt-2 w-100"><strong>DILG comments:</strong> <?php echo nl2br(e((string) $r['review_comments'])); ?></div>
+                            <?php endif; ?>
                         </div>
                     <?php endforeach; ?>
                 <?php endif; ?>

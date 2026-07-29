@@ -38,6 +38,76 @@ function sked_notify(int $userId, string $type, string $title, string $message, 
     }
 }
 
+/**
+ * Active users who should receive a role-level notification.
+ *
+ * @return array<int,int>
+ */
+function sked_notification_recipients(string $role, ?int $barangayId = null, ?int $exceptUserId = null): array
+{
+    $allowed = ['dilg', 'ppsk', 'sk', 'youth'];
+    if (!in_array($role, $allowed, true)) {
+        return [];
+    }
+
+    try {
+        $where = ["role = :role", "status = 'active'"];
+        $params = ['role' => $role];
+        if ($barangayId !== null) {
+            $where[] = 'barangay_id = :barangay_id';
+            $params['barangay_id'] = $barangayId;
+        }
+        if ($exceptUserId !== null && $exceptUserId > 0) {
+            $where[] = 'id <> :except_id';
+            $params['except_id'] = $exceptUserId;
+        }
+
+        $stmt = sked_db()->prepare('SELECT id FROM users WHERE ' . implode(' AND ', $where));
+        $stmt->execute($params);
+        return array_values(array_map('intval', $stmt->fetchAll(PDO::FETCH_COLUMN)));
+    } catch (Throwable $e) {
+        error_log('sked_notification_recipients failed: ' . $e->getMessage());
+        return [];
+    }
+}
+
+/** Create the same notification for all active recipients of a role/scope. */
+function sked_notify_role(string $role, string $type, string $title, string $message, ?string $link = null, ?int $barangayId = null, ?int $exceptUserId = null): int
+{
+    $sent = 0;
+    foreach (sked_notification_recipients($role, $barangayId, $exceptUserId) as $userId) {
+        sked_notify($userId, $type, $title, $message, $link);
+        $sent++;
+    }
+    return $sent;
+}
+
+/**
+ * Demo shortcut logins use ids 1-4 outside the users table. For the bell,
+ * mirror them to the seeded real role account when one exists.
+ */
+function sked_notification_user_id_for_session(int $sessionUserId, string $role = '', ?int $barangayId = null): int
+{
+    if ($sessionUserId <= 0 || $sessionUserId >= 1000) {
+        return $sessionUserId;
+    }
+
+    try {
+        $where = ["role = :role", "status = 'active'"];
+        $params = ['role' => $role];
+        if ($role === 'sk' || $role === 'youth') {
+            $where[] = 'barangay_id = :barangay_id';
+            $params['barangay_id'] = (int) ($barangayId ?? 0);
+        }
+        $stmt = sked_db()->prepare('SELECT id FROM users WHERE ' . implode(' AND ', $where) . ' ORDER BY id ASC LIMIT 1');
+        $stmt->execute($params);
+        $resolved = $stmt->fetchColumn();
+        return $resolved !== false ? (int) $resolved : $sessionUserId;
+    } catch (Throwable $e) {
+        return $sessionUserId;
+    }
+}
+
 /** Count of unread notifications for a user (0 for demo accounts / no rows). */
 function sked_unread_count(int $userId): int
 {
@@ -117,6 +187,7 @@ function sked_notification_visual(string $type): array
         'compliance' => ['icon' => 'bi-exclamation-triangle-fill', 'accent' => 'accent-rust'],
         'role_change' => ['icon' => 'bi-arrow-left-right', 'accent' => 'accent-fern'],
         'feedback' => ['icon' => 'bi-chat-left-text-fill', 'accent' => 'accent-teal'],
+        'report' => ['icon' => 'bi-clipboard-check-fill', 'accent' => 'accent-teal'],
         default => ['icon' => 'bi-bell-fill', 'accent' => 'accent-teal'],
     };
 }

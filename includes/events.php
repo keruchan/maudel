@@ -23,9 +23,27 @@ require_once __DIR__ . '/points.php';
 require_once __DIR__ . '/notifications.php';
 require_once __DIR__ . '/audit.php';
 require_once __DIR__ . '/barangays.php';
+require_once __DIR__ . '/profiling.php';
 
 const SKED_EVENT_IMAGE_MAX_BYTES = 5 * 1024 * 1024; // 5 MB
 const SKED_EVENT_IMAGE_ALLOWED_EXT = ['jpg', 'jpeg', 'png', 'webp'];
+const SKED_EVENT_TARGET_DIMENSIONS = ['classification', 'specific_need', 'sex', 'interest'];
+
+/**
+ * Optional "For You" targeting dimensions an event can be tagged with,
+ * reusing the exact KK Profiling vocabulary so a targeting value always
+ * matches a real youth_classifications/youth_specific_needs/youth_interests
+ * row (or users.sex_assigned_at_birth) verbatim.
+ */
+function sked_event_targeting_options(): array
+{
+    return [
+        'classification' => sked_youth_classifications(),
+        'specific_need' => sked_specific_needs_options(),
+        'sex' => ['male', 'female'],
+        'interest' => sked_interest_categories(),
+    ];
+}
 
 /**
  * Statuses in which a youth who was marked ATTENDED may submit the event
@@ -247,6 +265,16 @@ function sked_create_event(array $creator, array $data, ?array $imageFile = null
     $targetBarangays = array_map('intval', (array) ($data['target_barangays'] ?? []));
     $imageValidation = ['ok' => true, 'errors' => []];
 
+    // "For You" targeting (all optional) — validated against the real KK
+    // Profiling vocab so a typo'd/forged value can never silently mismatch.
+    $targetingOptions = sked_event_targeting_options();
+    $targeting = [
+        'classification' => array_values(array_intersect((array) ($data['target_classifications'] ?? []), $targetingOptions['classification'])),
+        'specific_need' => array_values(array_intersect((array) ($data['target_specific_needs'] ?? []), $targetingOptions['specific_need'])),
+        'sex' => array_values(array_intersect((array) ($data['target_sex'] ?? []), $targetingOptions['sex'])),
+        'interest' => array_values(array_intersect((array) ($data['target_interests'] ?? []), $targetingOptions['interest'])),
+    ];
+
     if ($title === '') {
         $errors[] = 'Event title is required.';
     }
@@ -344,6 +372,13 @@ function sked_create_event(array $creator, array $data, ?array $imageFile = null
             }
         }
 
+        $targetIns = $pdo->prepare('INSERT IGNORE INTO event_targeting (event_id, dimension, value) VALUES (:e, :d, :v)');
+        foreach ($targeting as $dimension => $values) {
+            foreach ($values as $value) {
+                $targetIns->execute(['e' => $eventId, 'd' => $dimension, 'v' => $value]);
+            }
+        }
+
         if (sked_event_image_upload_present($imageFile)) {
             /** @var array{ok:bool,errors:array<int,string>,ext:string,original_name:string} $imageValidation */
             $upload = sked_store_event_image($eventId, (int) ($creator['id'] ?? 0), $imageFile, $imageValidation);
@@ -378,6 +413,15 @@ function sked_get_event(int $eventId): ?array
     $bs = sked_db()->prepare('SELECT barangay_id FROM event_barangays WHERE event_id = :e');
     $bs->execute(['e' => $eventId]);
     $event['target_barangays'] = array_map(static fn($r) => (int) $r['barangay_id'], $bs->fetchAll());
+
+    $targeting = array_fill_keys(SKED_EVENT_TARGET_DIMENSIONS, []);
+    $ts = sked_db()->prepare('SELECT dimension, value FROM event_targeting WHERE event_id = :e');
+    $ts->execute(['e' => $eventId]);
+    foreach ($ts->fetchAll() as $row) {
+        $targeting[(string) $row['dimension']][] = (string) $row['value'];
+    }
+    $event['targeting'] = $targeting;
+
     return $event;
 }
 
@@ -397,7 +441,7 @@ function sked_get_event_by_token(string $token): ?array
 /** Participant tallies for an event, keyed by status (+ 'active' = joined/registered/attended). */
 function sked_participant_counts(int $eventId): array
 {
-    $out = ['interested' => 0, 'registered' => 0, 'attended' => 0, 'cancelled' => 0, 'no_show' => 0, 'active' => 0];
+    $out = ['interested' => 0, 'pending' => 0, 'registered' => 0, 'attended' => 0, 'declined' => 0, 'cancelled' => 0, 'no_show' => 0, 'active' => 0];
     if ($eventId <= 0) {
         return $out;
     }
@@ -551,25 +595,64 @@ function sked_events_for_youth(int $youthId, int $barangayId): array
         foreach ($ps->fetchAll() as $r) {
             $mine[(int) $r['event_id']] = $r['status'];
         }
+
+        // "For You": the youth's own KK Profiling values, compared against
+        // each event's (optional) targeting rows. ANY dimension match is
+        // enough — this is a soft highlight/sort signal, not a filter.
+        $ownValues = [
+            'classification' => sked_profile_child_values($youthId, 'youth_classifications', 'classification'),
+            'specific_need' => sked_profile_child_values($youthId, 'youth_specific_needs', 'need_type'),
+            'interest' => sked_profile_child_values($youthId, 'youth_interests', 'category'),
+        ];
+        $sexStmt = $pdo->prepare('SELECT sex_assigned_at_birth FROM users WHERE id = :id LIMIT 1');
+        $sexStmt->execute(['id' => $youthId]);
+        $ownSex = (string) ($sexStmt->fetchColumn() ?: '');
+        $ownValues['sex'] = $ownSex !== '' ? [$ownSex] : [];
+
+        $ts = $pdo->prepare("SELECT event_id, dimension, value FROM event_targeting WHERE event_id IN ($in)");
+        $ts->execute($ids);
+        $targetingByEvent = [];
+        foreach ($ts->fetchAll() as $r) {
+            $targetingByEvent[(int) $r['event_id']][(string) $r['dimension']][] = (string) $r['value'];
+        }
+
         foreach ($events as &$e) {
             $e['my_status'] = $mine[(int) $e['id']] ?? null;
+            $eventTargeting = $targetingByEvent[(int) $e['id']] ?? [];
+            $forYou = false;
+            foreach ($eventTargeting as $dimension => $values) {
+                if (array_intersect($values, $ownValues[$dimension] ?? []) !== []) {
+                    $forYou = true;
+                    break;
+                }
+            }
+            $e['is_for_you'] = $forYou;
         }
+        unset($e);
     }
     return $events;
 }
 
 /**
- * Public "announcements" feed (landing page + shared views). Reuses the
- * events table rather than a separate announcements table.
+ * Public landing-page feed: real announcements (includes/announcements.php)
+ * merged with public events, pinned-first then newest-first. Each row is
+ * tagged 'feed_type' => 'announcement'|'event' so the caller can render them
+ * distinctly. Requires includes/announcements.php (require_once'd here to
+ * avoid making every existing caller of this function add that require
+ * themselves — mutual require_once with events.php is safe since neither
+ * file calls the other's functions at top level, only inside function
+ * bodies called after both are loaded).
  *
  * $viewerBarangayId null => anonymous/no-barangay viewer: municipal-scope
- * events only. A real barangay id => same eligibility rule as
+ * items only. A real barangay id => same eligibility rule as
  * sked_events_for_youth (municipal + own barangay + inter-barangay that
  * includes that barangay) — e.g. a barangay-scoped post from Acevida's SK
  * is only returned when $viewerBarangayId is Acevida's id.
  */
 function sked_public_announcements(?int $viewerBarangayId, int $limit = 6): array
 {
+    require_once __DIR__ . '/announcements.php';
+
     $pdo = sked_db();
     $limit = max(1, $limit);
 
@@ -577,27 +660,46 @@ function sked_public_announcements(?int $viewerBarangayId, int $limit = 6): arra
         $stmt = $pdo->prepare(
             "SELECT * FROM events
               WHERE status IN ('published','confirmed','ongoing') AND scope = 'municipal'
-              ORDER BY event_date ASC, id DESC
-              LIMIT " . (int) $limit
+              ORDER BY event_date ASC, id DESC"
         );
         $stmt->execute();
-        return $stmt->fetchAll();
+        $events = $stmt->fetchAll();
+    } else {
+        $stmt = $pdo->prepare(
+            "SELECT e.* FROM events e
+              WHERE e.status IN ('published','confirmed','ongoing')
+                AND (
+                     (e.scope = 'municipal')
+                  OR (e.scope = 'barangay' AND e.barangay_id = :b1)
+                  OR (e.scope = 'interbarangay' AND EXISTS (
+                        SELECT 1 FROM event_barangays eb WHERE eb.event_id = e.id AND eb.barangay_id = :b2))
+                )
+              ORDER BY e.event_date ASC, e.id DESC"
+        );
+        $stmt->execute(['b1' => $viewerBarangayId, 'b2' => $viewerBarangayId]);
+        $events = $stmt->fetchAll();
     }
+    foreach ($events as &$e) {
+        $e['feed_type'] = 'event';
+        $e['pinned'] = 0;
+        $e['feed_sort_at'] = (string) $e['created_at'];
+    }
+    unset($e);
 
-    $stmt = $pdo->prepare(
-        "SELECT e.* FROM events e
-          WHERE e.status IN ('published','confirmed','ongoing')
-            AND (
-                 (e.scope = 'municipal')
-              OR (e.scope = 'barangay' AND e.barangay_id = :b1)
-              OR (e.scope = 'interbarangay' AND EXISTS (
-                    SELECT 1 FROM event_barangays eb WHERE eb.event_id = e.id AND eb.barangay_id = :b2))
-            )
-          ORDER BY e.event_date ASC, e.id DESC
-          LIMIT " . (int) $limit
-    );
-    $stmt->execute(['b1' => $viewerBarangayId, 'b2' => $viewerBarangayId]);
-    return $stmt->fetchAll();
+    $announcements = sked_published_announcements_for_feed($viewerBarangayId, $limit);
+    foreach ($announcements as &$a) {
+        $a['feed_type'] = 'announcement';
+        $a['feed_sort_at'] = (string) $a['created_at'];
+    }
+    unset($a);
+
+    $merged = array_merge($announcements, $events);
+    usort($merged, static function ($a, $b) {
+        $pinCmp = (int) $b['pinned'] <=> (int) $a['pinned'];
+        return $pinCmp !== 0 ? $pinCmp : strcmp((string) $b['feed_sort_at'], (string) $a['feed_sort_at']);
+    });
+
+    return array_slice($merged, 0, $limit);
 }
 
 /** A youth's own participations (joined events), newest event date first. */
@@ -673,10 +775,19 @@ function sked_event_is_open(array $event): bool
 
 /**
  * Youth joins (interested) or registers for an event. Enforces verified +
- * in-scope + open + capacity. Awards join points once. Team sports: the
- * team_name is recorded; scope/verified is enforced per registrant.
+ * in-scope + open. Team sports: the team_name is recorded; scope/verified
+ * is enforced per registrant.
  *
- * @return array{ok:bool,error?:string}
+ * Register-type events land in 'pending' — a pre-registration request only,
+ * not yet confirmed — since the SK/PPSK office still needs to settle fees
+ * or verify documents in person. Capacity is intentionally NOT enforced
+ * here (a pending queue can run ahead of capacity); it's checked as a
+ * strong-but-non-blocking warning when the office accepts, in
+ * sked_accept_registration(). Points for register-type also move to that
+ * acceptance step, since 'pending' isn't a confirmed signup yet.
+ * Interested-type "Join" events are unaffected: instant, points immediately.
+ *
+ * @return array{ok:bool,error?:string,pending?:bool}
  */
 function sked_join_event(int $youthId, int $youthBarangayId, int $eventId, string $teamName = ''): array
 {
@@ -700,30 +811,18 @@ function sked_join_event(int $youthId, int $youthBarangayId, int $eventId, strin
     $existing = sked_db()->prepare('SELECT status FROM event_participants WHERE event_id = :e AND user_id = :u LIMIT 1');
     $existing->execute(['e' => $eventId, 'u' => $youthId]);
     $cur = $existing->fetchColumn();
-    if ($cur !== false && $cur !== 'cancelled') {
+    if ($cur !== false && !in_array($cur, ['cancelled', 'declined'], true)) {
         return ['ok' => false, 'error' => 'You have already signed up for this event.'];
     }
 
-    $participantStatus = $event['type'] === 'register' ? 'registered' : 'interested';
+    $isRegisterType = $event['type'] === 'register';
+    $participantStatus = $isRegisterType ? 'pending' : 'interested';
 
     $pdo = sked_db();
     $pdo->beginTransaction();
     try {
-        // Capacity check under a row lock for register-type events.
-        if ($event['type'] === 'register' && $event['capacity'] !== null) {
-            $cntStmt = $pdo->prepare(
-                "SELECT COUNT(*) FROM event_participants
-                  WHERE event_id = :e AND status IN ('registered','attended') FOR UPDATE"
-            );
-            $cntStmt->execute(['e' => $eventId]);
-            if ((int) $cntStmt->fetchColumn() >= (int) $event['capacity']) {
-                $pdo->rollBack();
-                return ['ok' => false, 'error' => 'Sorry, this event is already full.'];
-            }
-        }
-
-        // Re-activate a prior cancellation, or insert fresh.
-        if ($cur === 'cancelled') {
+        // Re-activate a prior cancellation/decline, or insert fresh.
+        if ($cur !== false) {
             $up = $pdo->prepare(
                 'UPDATE event_participants SET status = :s, team_name = :t, joined_at = NOW()
                   WHERE event_id = :e AND user_id = :u'
@@ -744,23 +843,103 @@ function sked_join_event(int $youthId, int $youthBarangayId, int $eventId, strin
         return ['ok' => false, 'error' => 'Could not sign you up. Please try again.'];
     }
 
-    // Points for joining (once per event).
-    sked_award_points($youthId, 'event_joined', 'event', $eventId);
+    if (!$isRegisterType) {
+        // Points for joining (once per event) — register-type earns this on acceptance instead.
+        sked_award_points($youthId, 'event_joined', 'event', $eventId);
+    }
 
-    return ['ok' => true];
+    return ['ok' => true, 'pending' => $isRegisterType];
 }
 
-/** Youth cancels their own participation. */
+/** Youth cancels their own participation (including a still-pending registration request). */
 function sked_cancel_participation(int $youthId, int $eventId): array
 {
     $stmt = sked_db()->prepare(
         "UPDATE event_participants SET status = 'cancelled'
-          WHERE event_id = :e AND user_id = :u AND status IN ('interested','registered')"
+          WHERE event_id = :e AND user_id = :u AND status IN ('interested','pending','registered')"
     );
     $stmt->execute(['e' => $eventId, 'u' => $youthId]);
     if ($stmt->rowCount() === 0) {
         return ['ok' => false, 'error' => 'Nothing to cancel for this event.'];
     }
+    return ['ok' => true];
+}
+
+/**
+ * SK/PPSK accepts a pending registration request, confirming the slot.
+ * Awards the join points (deferred from sked_join_event() for register-type
+ * signups) and notifies the youth with the "finalize at the office"
+ * advisory. Capacity is a strong warning only — accepting still succeeds
+ * even if it pushes the event over its expected capacity; the caller
+ * decides whether to surface that (exceeds_capacity) as a confirmation
+ * prompt before submitting and/or a flash after.
+ *
+ * @return array{ok:bool,error?:string,exceeds_capacity?:bool,confirmed_count?:int,capacity?:?int}
+ */
+function sked_accept_registration(int $actorId, int $eventId, int $participantUserId): array
+{
+    $event = sked_get_event($eventId);
+    if ($event === null) {
+        return ['ok' => false, 'error' => 'Event not found.'];
+    }
+
+    $stmt = sked_db()->prepare(
+        "UPDATE event_participants SET status = 'registered'
+          WHERE event_id = :e AND user_id = :u AND status = 'pending'"
+    );
+    $stmt->execute(['e' => $eventId, 'u' => $participantUserId]);
+    if ($stmt->rowCount() === 0) {
+        return ['ok' => false, 'error' => 'This registration is no longer pending.'];
+    }
+
+    sked_award_points($participantUserId, 'event_joined', 'event', $eventId);
+    sked_audit($actorId, 'registration_accepted', 'event', $eventId, 'user #' . $participantUserId);
+    sked_notify(
+        $participantUserId,
+        'event',
+        'Registration confirmed: ' . $event['title'],
+        'Your registration for "' . $event['title'] . '" has been confirmed. Please proceed to your SK/PPSK office to finalize it (e.g. settlement of entrance fee/payment, submission of documents).',
+        '../youth/events.php'
+    );
+
+    $counts = sked_participant_counts($eventId);
+    $capacity = $event['capacity'] !== null ? (int) $event['capacity'] : null;
+    $confirmedCount = $counts['registered'] + $counts['attended'];
+
+    return [
+        'ok' => true,
+        'exceeds_capacity' => $capacity !== null && $confirmedCount > $capacity,
+        'confirmed_count' => $confirmedCount,
+        'capacity' => $capacity,
+    ];
+}
+
+/** SK/PPSK declines a pending registration request. */
+function sked_decline_registration(int $actorId, int $eventId, int $participantUserId): array
+{
+    $event = sked_get_event($eventId);
+    if ($event === null) {
+        return ['ok' => false, 'error' => 'Event not found.'];
+    }
+
+    $stmt = sked_db()->prepare(
+        "UPDATE event_participants SET status = 'declined'
+          WHERE event_id = :e AND user_id = :u AND status = 'pending'"
+    );
+    $stmt->execute(['e' => $eventId, 'u' => $participantUserId]);
+    if ($stmt->rowCount() === 0) {
+        return ['ok' => false, 'error' => 'This registration is no longer pending.'];
+    }
+
+    sked_audit($actorId, 'registration_declined', 'event', $eventId, 'user #' . $participantUserId);
+    sked_notify(
+        $participantUserId,
+        'event',
+        'Registration not approved: ' . $event['title'],
+        'Your registration for "' . $event['title'] . '" was not approved. Please contact your SK/PPSK office for details.',
+        '../youth/events.php'
+    );
+
     return ['ok' => true];
 }
 

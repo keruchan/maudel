@@ -54,7 +54,7 @@ $openCount = count(array_filter($messages, static fn($m) => $m['status'] === 'op
     <link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="../../css/dashboard.css?v=1">
+    <link rel="stylesheet" href="../../css/dashboard.css?v=2">
 </head>
 <body>
     <a href="#main-content" class="skip-link">Skip to main content</a>
@@ -67,7 +67,7 @@ $openCount = count(array_filter($messages, static fn($m) => $m['status'] === 'op
                     <div>
                         <div class="eyebrow">Barangay <?php echo e($barangayName !== '' ? $barangayName : 'Council'); ?> &middot; <?php echo e($todayLabel); ?></div>
                         <h1 class="page-title">Feedback / Concerns</h1>
-                        <p class="text-secondary meta-copy mb-0">Messages sent directly to you by youth in your barangay.</p>
+                        <p class="text-secondary meta-copy mb-0">Anonymous messages from youth in your barangay, labeled only to distinguish unique senders.</p>
                     </div>
                     <div class="d-flex align-items-center gap-2">
                         <?php render_sked_notification_bell('header'); ?><span class="officer-chip">
@@ -93,30 +93,55 @@ $openCount = count(array_filter($messages, static fn($m) => $m['status'] === 'op
                 <?php if (empty($messages)): ?>
                     <div class="text-center text-secondary py-5"><i class="bi bi-chat-left-text fs-1 d-block mb-2"></i>Nothing yet.</div>
                 <?php else: ?>
-                    <?php foreach ($messages as $f): ?>
-                        <div class="docket-row d-block">
-                            <div class="d-flex justify-content-between align-items-start gap-2">
-                                <div>
-                                    <div class="docket-title"><?php echo e((string) $f['name']); ?> <span class="small text-secondary fw-normal">@<?php echo e((string) $f['username']); ?></span></div>
-                                    <div class="docket-sub"><?php echo e(date('M j, Y g:i A', strtotime((string) $f['created_at']))); ?></div>
-                                </div>
-                                <span class="badge <?php echo $f['status'] === 'reviewed' ? 'text-bg-success' : 'text-bg-secondary'; ?> text-capitalize"><?php echo e((string) $f['status']); ?></span>
-                            </div>
-                            <p class="mb-2 mt-2"><?php echo nl2br(e((string) $f['message'])); ?></p>
-                            <?php if ($f['status'] === 'open'): ?>
-                                <form method="post" action="feedback.php">
-                                    <input type="hidden" name="csrf_token" value="<?php echo e((string) $_SESSION['csrf_skfeedback_token']); ?>">
-                                    <input type="hidden" name="feedback_id" value="<?php echo (int) $f['id']; ?>">
-                                    <button type="submit" class="btn btn-sm btn-outline-primary"><i class="bi bi-check-lg me-1"></i>Mark reviewed</button>
-                                </form>
-                            <?php endif; ?>
-                        </div>
-                    <?php endforeach; ?>
+                    <div class="table-responsive">
+                        <table class="table align-middle" id="feedbackTable">
+                            <thead>
+                                <tr>
+                                    <th scope="col">Sender</th>
+                                    <th scope="col">Message</th>
+                                    <th scope="col">Date</th>
+                                    <th scope="col">Status</th>
+                                    <th scope="col" class="text-end" data-tt-nosort>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php foreach ($messages as $f): ?>
+                                    <tr>
+                                        <td class="fw-semibold" data-tt-value="<?php echo e((string) ($f['anonymous_label'] ?? 'anonymous')); ?>">
+                                            <i class="bi bi-incognito me-1"></i><?php echo e((string) ($f['anonymous_label'] ?? 'anonymous')); ?>
+                                        </td>
+                                        <td style="min-width:280px; max-width:560px;"><?php echo nl2br(e((string) $f['message'])); ?></td>
+                                        <td class="small text-secondary" data-tt-sort="<?php echo e((string) strtotime((string) $f['created_at'])); ?>">
+                                            <?php echo e(date('M j, Y g:i A', strtotime((string) $f['created_at']))); ?>
+                                        </td>
+                                        <td>
+                                            <span class="badge <?php echo $f['status'] === 'reviewed' ? 'text-bg-success' : 'text-bg-secondary'; ?> text-capitalize"><?php echo e((string) $f['status']); ?></span>
+                                        </td>
+                                        <td class="text-end">
+                                            <?php if ($f['status'] === 'open'): ?>
+                                                <form method="post" action="feedback.php" class="d-inline">
+                                                    <input type="hidden" name="csrf_token" value="<?php echo e((string) $_SESSION['csrf_skfeedback_token']); ?>">
+                                                    <input type="hidden" name="feedback_id" value="<?php echo (int) $f['id']; ?>">
+                                                    <button type="submit" class="btn btn-sm btn-outline-primary"><i class="bi bi-check-lg me-1"></i>Mark reviewed</button>
+                                                </form>
+                                            <?php else: ?>
+                                                <span class="text-secondary small">Reviewed</span>
+                                            <?php endif; ?>
+                                        </td>
+                                    </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
                 <?php endif; ?>
             </div>
             <?php endif; ?>
         </main>
     </div>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="../../js/table-tools.js?v=4"></script>
+    <script>
+        new SkedTableTools('#feedbackTable', { pageSize: 25, filters: [{ label: 'Sender' }, { label: 'Status' }] });
+    </script>
 </body>
 </html>

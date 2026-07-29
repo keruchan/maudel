@@ -40,12 +40,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } elseif ($barangayId <= 0) {
         $flash = ['type' => 'danger', 'msg' => 'Your account is not assigned to a barangay.'];
     } elseif ($formName === 'status') {
-        $r = sked_set_poll_status((int) ($_POST['poll_id'] ?? 0), $barangayId, (string) ($_POST['new_status'] ?? ''));
+        $r = sked_set_poll_status((int) ($_POST['poll_id'] ?? 0), $barangayId, (string) ($_POST['new_status'] ?? ''), (string) ($_POST['closes_at'] ?? ''));
         $flash = $r['ok'] ? ['type' => 'success', 'msg' => 'Poll updated.'] : ['type' => 'danger', 'msg' => e($r['error'])];
     } else {
         $creator = ['id' => $skUserId, 'role' => $role, 'name' => $displayName, 'barangay_id' => $barangayId];
         $options = array_filter(array_map('trim', (array) ($_POST['options'] ?? [])), static fn($o) => $o !== '');
-        $r = sked_create_poll($creator, (string) ($_POST['question'] ?? ''), $options, !empty($_POST['publish']), (string) ($_POST['category'] ?? ''));
+        $r = sked_create_poll($creator, (string) ($_POST['question'] ?? ''), $options, !empty($_POST['publish']), (string) ($_POST['category'] ?? ''), (string) ($_POST['closes_at'] ?? ''));
         if ($r['ok']) {
             $flash = ['type' => 'success', 'msg' => 'Poll created' . (!empty($_POST['publish']) ? ' and published.' : ' as a draft.')];
         } else {
@@ -58,6 +58,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $polls = $barangayId > 0 ? sked_polls_for_barangay($barangayId) : [];
 $statusBadge = static fn(string $s) => ['draft' => 'secondary', 'open' => 'primary', 'closed' => 'dark'][$s] ?? 'secondary';
 $categories = sked_interest_categories();
+$openPolls = count(array_filter($polls, static fn($p) => (string) $p['status'] === 'open'));
+$draftPolls = count(array_filter($polls, static fn($p) => (string) $p['status'] === 'draft'));
+$closedPolls = count(array_filter($polls, static fn($p) => (string) $p['status'] === 'closed'));
+$defaultCloseAt = date('Y-m-d\TH:i', strtotime('+7 days'));
+$pollCloseInputValue = static function (array $poll) use ($defaultCloseAt): string {
+    return !empty($poll['closes_at']) ? date('Y-m-d\TH:i', strtotime((string) $poll['closes_at'])) : $defaultCloseAt;
+};
+$pollCloseLabel = static function (array $poll): string {
+    return !empty($poll['closes_at']) ? date('M j, Y g:i A', strtotime((string) $poll['closes_at'])) : 'Not scheduled';
+};
 ?>
 <!doctype html>
 <html lang="en">
@@ -70,7 +80,7 @@ $categories = sked_interest_categories();
     <link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="../../css/dashboard.css?v=1">
+    <link rel="stylesheet" href="../../css/dashboard.css?v=2">
     <style>.poll-bar{height:8px;border-radius:999px;background:#e5e7f2;overflow:hidden;} .poll-bar>div{height:100%;background:linear-gradient(90deg,#4338ca,#818cf8);}</style>
 </head>
 <body>
@@ -102,8 +112,20 @@ $categories = sked_interest_categories();
                 <div class="alert alert-warning"><i class="bi bi-exclamation-triangle-fill me-1"></i> Your SK account isn't linked to a barangay yet.</div>
             <?php else: ?>
 
+            <section class="row g-3 mb-4" aria-label="Poll summary">
+                <div class="col-sm-4">
+                    <div class="ledger-card accent-teal"><span class="ledger-tag">Open</span><div class="ledger-value tabular"><?php echo (int) $openPolls; ?></div><div class="ledger-caption">Active polls</div></div>
+                </div>
+                <div class="col-sm-4">
+                    <div class="ledger-card accent-amber"><span class="ledger-tag">Draft</span><div class="ledger-value tabular"><?php echo (int) $draftPolls; ?></div><div class="ledger-caption">Ready to publish</div></div>
+                </div>
+                <div class="col-sm-4">
+                    <div class="ledger-card"><span class="ledger-tag">Closed</span><div class="ledger-value tabular"><?php echo (int) $closedPolls; ?></div><div class="ledger-caption">Completed polls</div></div>
+                </div>
+            </section>
+
             <div class="row g-4">
-                <div class="col-lg-5">
+                <div class="col-lg-4">
                     <div class="docket-panel">
                         <div class="section-heading"><h2>New Poll</h2></div>
                         <form method="post" action="polls.php" novalidate>
@@ -122,6 +144,11 @@ $categories = sked_interest_categories();
                                     <?php foreach ($categories as $c): ?><option value="<?php echo e($c); ?>" <?php echo sked_old_selected('category', $c) ? 'selected' : ''; ?>><?php echo e($c); ?></option><?php endforeach; ?>
                                 </select>
                             </div>
+                            <div class="mb-3">
+                                <label for="closes_at" class="form-label">Close voting at</label>
+                                <input type="datetime-local" class="form-control" id="closes_at" name="closes_at" min="<?php echo e(date('Y-m-d\TH:i')); ?>" value="<?php echo e(sked_old('closes_at', $defaultCloseAt)); ?>" required>
+                                <div class="form-text">Open polls close automatically after this date and time.</div>
+                            </div>
                             <label class="form-label">Answer options <span class="text-secondary fw-normal">(2&ndash;6, blank ones ignored)</span></label>
                             <?php $oldOptions = sked_old_array('options'); ?>
                             <?php for ($i = 1; $i <= 6; $i++): ?>
@@ -136,7 +163,7 @@ $categories = sked_interest_categories();
                     </div>
                 </div>
 
-                <div class="col-lg-7">
+                <div class="col-lg-8">
                     <div class="docket-panel">
                         <div class="section-heading">
                             <h2>Your Polls</h2>
@@ -145,32 +172,62 @@ $categories = sked_interest_categories();
                         <?php if (empty($polls)): ?>
                             <div class="text-center text-secondary py-5"><i class="bi bi-bar-chart fs-1 d-block mb-2"></i>No polls yet. Create your first one.</div>
                         <?php else: ?>
-                            <?php foreach ($polls as $p): $res = sked_poll_results((int) $p['id']); ?>
-                                <div class="docket-row d-block">
-                                    <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
-                                        <div class="docket-title"><?php echo e((string) $p['question']); ?>
-                                            <span class="badge text-bg-<?php echo e($statusBadge((string) $p['status'])); ?> ms-1"><?php echo e(ucfirst((string) $p['status'])); ?></span>
-                                            <?php if (!empty($p['category'])): ?><span class="badge text-bg-light ms-1"><?php echo e((string) $p['category']); ?></span><?php endif; ?>
-                                        </div>
-                                        <span class="count-badge tabular"><?php echo $res['total']; ?> votes</span>
-                                    </div>
-                                    <?php foreach ($res['options'] as $o): $pct = $res['total'] > 0 ? (int) round($o['votes'] / $res['total'] * 100) : 0; ?>
-                                        <div class="small d-flex justify-content-between"><span><?php echo e((string) $o['option_text']); ?></span><span class="text-secondary"><?php echo $o['votes']; ?> (<?php echo $pct; ?>%)</span></div>
-                                        <div class="poll-bar mb-2"><div style="width:<?php echo $pct; ?>%"></div></div>
-                                    <?php endforeach; ?>
-                                    <?php if ($p['status'] !== 'closed'): ?>
-                                    <form method="post" action="polls.php" class="mt-1">
-                                        <input type="hidden" name="csrf_token" value="<?php echo e((string) $_SESSION['csrf_polls_token']); ?>">
-                                        <input type="hidden" name="form" value="status">
-                                        <input type="hidden" name="poll_id" value="<?php echo (int) $p['id']; ?>">
-                                        <input type="hidden" name="new_status" value="<?php echo $p['status'] === 'draft' ? 'open' : 'closed'; ?>">
-                                        <button type="submit" class="btn btn-sm <?php echo $p['status'] === 'draft' ? 'btn-outline-primary' : 'btn-outline-dark'; ?>">
-                                            <?php echo $p['status'] === 'draft' ? 'Publish' : 'Close poll'; ?>
-                                        </button>
-                                    </form>
-                                    <?php endif; ?>
-                                </div>
-                            <?php endforeach; ?>
+                            <div class="table-responsive">
+                                <table class="table align-middle" id="pollsTable">
+                                    <thead>
+                                        <tr>
+                                            <th scope="col">Poll</th>
+                                            <th scope="col">Topic</th>
+                                            <th scope="col">Status</th>
+                                            <th scope="col">Closes</th>
+                                            <th scope="col" class="text-end">Votes</th>
+                                            <th scope="col">Results</th>
+                                            <th scope="col" class="text-end" data-tt-nosort>Action</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <?php foreach ($polls as $p): $res = sked_poll_results((int) $p['id']); ?>
+                                            <tr>
+                                                <td class="fw-semibold" style="min-width:220px;"><?php echo e((string) $p['question']); ?></td>
+                                                <td><?php echo !empty($p['category']) ? e((string) $p['category']) : '<span class="text-secondary small">None</span>'; ?></td>
+                                                <td><span class="badge text-bg-<?php echo e($statusBadge((string) $p['status'])); ?> text-capitalize"><?php echo e((string) $p['status']); ?></span></td>
+                                                <td class="small text-secondary" data-tt-sort="<?php echo !empty($p['closes_at']) ? e((string) strtotime((string) $p['closes_at'])) : ''; ?>">
+                                                    <?php echo e($pollCloseLabel($p)); ?>
+                                                </td>
+                                                <td class="text-end tabular"><?php echo (int) $res['total']; ?></td>
+                                                <td style="min-width:220px;">
+                                                    <?php foreach ($res['options'] as $o): $pct = $res['total'] > 0 ? (int) round($o['votes'] / $res['total'] * 100) : 0; ?>
+                                                        <div class="small d-flex justify-content-between gap-2"><span><?php echo e((string) $o['option_text']); ?></span><span class="text-secondary tabular"><?php echo (int) $o['votes']; ?> (<?php echo $pct; ?>%)</span></div>
+                                                        <div class="poll-bar mb-2"><div style="width:<?php echo $pct; ?>%"></div></div>
+                                                    <?php endforeach; ?>
+                                                </td>
+                                                <td class="text-end">
+                                                    <?php if ($p['status'] === 'draft'): ?>
+                                                        <form method="post" action="polls.php" class="d-inline-flex align-items-center justify-content-end gap-2">
+                                                            <input type="hidden" name="csrf_token" value="<?php echo e((string) $_SESSION['csrf_polls_token']); ?>">
+                                                            <input type="hidden" name="form" value="status">
+                                                            <input type="hidden" name="poll_id" value="<?php echo (int) $p['id']; ?>">
+                                                            <input type="hidden" name="new_status" value="open">
+                                                            <input type="datetime-local" class="form-control form-control-sm" name="closes_at" min="<?php echo e(date('Y-m-d\TH:i')); ?>" value="<?php echo e($pollCloseInputValue($p)); ?>" style="width:170px;" aria-label="Close voting at" required>
+                                                            <button type="submit" class="btn btn-sm btn-outline-primary"><i class="bi bi-play-fill me-1"></i>Open</button>
+                                                        </form>
+                                                    <?php elseif ($p['status'] === 'open'): ?>
+                                                        <form method="post" action="polls.php" class="d-inline">
+                                                            <input type="hidden" name="csrf_token" value="<?php echo e((string) $_SESSION['csrf_polls_token']); ?>">
+                                                            <input type="hidden" name="form" value="status">
+                                                            <input type="hidden" name="poll_id" value="<?php echo (int) $p['id']; ?>">
+                                                            <input type="hidden" name="new_status" value="closed">
+                                                            <button type="submit" class="btn btn-sm btn-outline-dark"><i class="bi bi-stop-fill me-1"></i>Close</button>
+                                                        </form>
+                                                    <?php else: ?>
+                                                        <span class="text-secondary small">Closed</span>
+                                                    <?php endif; ?>
+                                                </td>
+                                            </tr>
+                                        <?php endforeach; ?>
+                                    </tbody>
+                                </table>
+                            </div>
                         <?php endif; ?>
                     </div>
                 </div>
@@ -179,5 +236,9 @@ $categories = sked_interest_categories();
         </main>
     </div>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="../../js/table-tools.js?v=4"></script>
+    <script>
+        new SkedTableTools('#pollsTable', { pageSize: 10, filters: [{ label: 'Topic' }, { label: 'Status' }] });
+    </script>
 </body>
 </html>

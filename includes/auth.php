@@ -17,6 +17,7 @@
  */
 
 require_once __DIR__ . '/barangays.php';
+require_once __DIR__ . '/notifications.php';
 
 /** KK eligibility bounds (RA 10742), inclusive. */
 const SKED_MIN_AGE = 15;
@@ -301,6 +302,16 @@ function sked_register_youth_user(string $surname, string $givenName, string $mi
     }
 
     $record = sked_find_registered_user($username);
+    if ($record !== null) {
+        sked_notify_role(
+            'sk',
+            'verification',
+            'New youth verification request',
+            $fullName . ' registered and is waiting for SK verification.',
+            '../sk/verify.php',
+            $barangayId
+        );
+    }
 
     return ['ok' => true, 'errors' => [], 'user' => $record];
 }

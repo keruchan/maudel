@@ -44,6 +44,7 @@ if ($youth === null) {
 $errors = [];
 $success = false;
 $pointsAwarded = false;
+$youthIsVerified = (string) ($youth['status'] ?? '') === 'active' && !empty($youth['verified']);
 
 if (empty($_SESSION['csrf_kkprofile_token'])) {
     $_SESSION['csrf_kkprofile_token'] = bin2hex(random_bytes(32));
@@ -56,6 +57,8 @@ if ($isPost) {
     $sessionToken = (string) ($_SESSION['csrf_kkprofile_token'] ?? '');
     if ($sessionToken === '' || !hash_equals($sessionToken, $submittedToken)) {
         $errors[] = 'Security validation failed. Please refresh and try again.';
+    } elseif (!$youthIsVerified) {
+        $errors[] = 'KK profiling is disabled until this youth account is verified.';
     } else {
         $result = sked_save_youth_profile($youthId, $_POST, $skUserId, 'sk');
         $success = $result['ok'];
@@ -81,7 +84,7 @@ $v = $isPost ? $_POST : sked_profile_view_defaults($profile);
     <link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="../../css/dashboard.css?v=1">
+    <link rel="stylesheet" href="../../css/dashboard.css?v=2">
 </head>
 <body>
     <a href="#main-content" class="skip-link">Skip to main content</a>
@@ -120,11 +123,19 @@ $v = $isPost ? $_POST : sked_profile_view_defaults($profile);
             <?php if (!empty($errors)): ?>
                 <div class="alert alert-danger" role="alert"><ul class="mb-0"><?php foreach ($errors as $err): ?><li><?php echo e($err); ?></li><?php endforeach; ?></ul></div>
             <?php endif; ?>
-            <?php if ($hasProfile && !$isPost): ?>
+            <?php if ($hasProfile && $youthIsVerified && !$isPost): ?>
                 <div class="alert alert-info" role="alert"><i class="bi bi-check2-circle me-1"></i>This KK member already has a saved profile. You can update their answers below.</div>
             <?php endif; ?>
 
-            <?php sked_render_kk_profile_form($v, $identity, false, (string) $_SESSION['csrf_kkprofile_token'], 'kk_profile.php?youth_id=' . $youthId); ?>
+            <?php if (!$youthIsVerified): ?>
+                <div class="alert alert-warning" role="alert">
+                    <i class="bi bi-lock-fill me-1"></i>
+                    KK profiling is disabled until this youth is verified. Verify the account first from the SK verification page.
+                </div>
+                <a class="btn btn-sked" href="../sk/verify.php"><i class="bi bi-shield-check me-1"></i>Go to Verification</a>
+            <?php else: ?>
+                <?php sked_render_kk_profile_form($v, $identity, false, (string) $_SESSION['csrf_kkprofile_token'], 'kk_profile.php?youth_id=' . $youthId); ?>
+            <?php endif; ?>
         </main>
     </div>
 

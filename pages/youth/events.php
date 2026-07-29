@@ -48,7 +48,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $flash = ['type' => 'warning', 'msg' => 'Demo account: joining is preview-only and was not saved.'];
     } elseif ($action === 'join') {
         $r = sked_join_event($userId, $barangayId, $eventId, (string) ($_POST['team_name'] ?? ''));
-        $flash = $r['ok'] ? ['type' => 'success', 'msg' => 'You are signed up! Participation points awarded.'] : ['type' => 'danger', 'msg' => e($r['error'])];
+        if ($r['ok'] && !empty($r['pending'])) {
+            $flash = ['type' => 'warning', 'msg' => 'Your registration request has been submitted and is now <strong>Pending</strong>. This is a pre-registration only — please proceed to your SK/PPSK office to finalize it (e.g. settlement of entrance fee/payment, submission of documents). You\'ll be notified once it\'s confirmed.'];
+        } else {
+            $flash = $r['ok'] ? ['type' => 'success', 'msg' => 'You are signed up! Participation points awarded.'] : ['type' => 'danger', 'msg' => e($r['error'])];
+        }
     } elseif ($action === 'cancel') {
         $r = sked_cancel_participation($userId, $eventId);
         $flash = $r['ok'] ? ['type' => 'info', 'msg' => 'Your sign-up was cancelled.'] : ['type' => 'danger', 'msg' => e($r['error'])];
@@ -71,6 +75,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 sked_form_retain($reopenEventId !== null);
 
 $events = ($isVerified && $barangayId > 0) ? sked_events_for_youth($userId, $barangayId) : [];
+// "For You" matches float to the top of whichever bucket they're already in —
+// stable since PHP 8, so this never reorders events beyond that. Nothing is
+// hidden; non-matching general events still show, just after the picks.
+usort($events, static fn ($a, $b) => (int) ($b['is_for_you'] ?? false) <=> (int) ($a['is_for_you'] ?? false));
 $ongoingEvents = array_values(array_filter($events, static fn ($e) => sked_event_time_bucket($e) === 'ongoing'));
 $upcomingEvents = array_values(array_filter($events, static fn ($e) => sked_event_time_bucket($e) === 'upcoming'));
 
@@ -83,7 +91,7 @@ $evaluableById = [];
 foreach ($evaluable as $ev) { $evaluableById[(int) $ev['id']] = $ev; }
 
 $participantStatusBadge = static function (string $s): string {
-    $map = ['attended' => 'success', 'no_show' => 'danger', 'registered' => 'primary', 'interested' => 'info', 'cancelled' => 'secondary'];
+    $map = ['attended' => 'success', 'no_show' => 'danger', 'registered' => 'primary', 'interested' => 'info', 'pending' => 'warning', 'declined' => 'secondary', 'cancelled' => 'secondary'];
     return $map[$s] ?? 'secondary';
 };
 
@@ -103,9 +111,8 @@ $renderBrowseTable = function (string $title, array $list, string $icon, string 
                             $c = sked_participant_counts((int) $ev['id']);
                             $isRegister = $ev['type'] === 'register';
                             $taken = $c['registered'] + $c['attended'];
-                            $full = $isRegister && $ev['capacity'] !== null && $taken >= (int) $ev['capacity'];
                             $mine = $ev['my_status'] ?? null;
-                            $joined = in_array($mine, ['interested', 'registered', 'attended'], true);
+                            $joined = in_array($mine, ['interested', 'pending', 'registered', 'attended'], true);
                             $imageUrl = sked_event_image_url($ev, '../public/event_image.php');
                         ?>
                         <tr>
@@ -121,6 +128,7 @@ $renderBrowseTable = function (string $title, array $list, string $icon, string 
                                     <div>
                                         <div class="fw-semibold"><?php echo e((string) $ev['title']); ?></div>
                                         <?php if (!empty($ev['location'])): ?><div class="small text-secondary"><i class="bi bi-geo-alt me-1"></i><?php echo e((string) $ev['location']); ?></div><?php endif; ?>
+                                        <?php if (!empty($ev['is_for_you'])): ?><span class="badge text-bg-warning"><i class="bi bi-stars me-1"></i>For You</span><?php endif; ?>
                                         <?php if (!empty($ev['category'])): ?><span class="badge text-bg-light"><?php echo e((string) $ev['category']); ?></span><?php endif; ?>
                                     </div>
                                 </div>
@@ -136,7 +144,11 @@ $renderBrowseTable = function (string $title, array $list, string $icon, string 
                             </td>
                             <td class="text-end">
                                 <?php if ($joined): ?>
-                                    <span class="badge text-bg-success me-1"><i class="bi bi-check-lg me-1"></i><?php echo $mine === 'attended' ? 'Attended' : 'Signed up'; ?></span>
+                                    <?php if ($mine === 'pending'): ?>
+                                        <span class="badge text-bg-warning me-1"><i class="bi bi-hourglass-split me-1"></i>Pending</span>
+                                    <?php else: ?>
+                                        <span class="badge text-bg-success me-1"><i class="bi bi-check-lg me-1"></i><?php echo $mine === 'attended' ? 'Attended' : 'Signed up'; ?></span>
+                                    <?php endif; ?>
                                     <?php if ($mine !== 'attended'): ?>
                                     <form method="post" action="events.php" class="d-inline">
                                         <input type="hidden" name="csrf_token" value="<?php echo e((string) $_SESSION['csrf_yevents_token']); ?>">
@@ -145,8 +157,6 @@ $renderBrowseTable = function (string $title, array $list, string $icon, string 
                                         <button class="btn btn-sm btn-outline-secondary" type="submit"><i class="bi bi-x-circle"></i></button>
                                     </form>
                                     <?php endif; ?>
-                                <?php elseif ($full): ?>
-                                    <span class="badge text-bg-danger">Full</span>
                                 <?php else: ?>
                                     <form method="post" action="events.php" class="d-inline-flex align-items-center gap-1 justify-content-end">
                                         <input type="hidden" name="csrf_token" value="<?php echo e((string) $_SESSION['csrf_yevents_token']); ?>">
@@ -182,7 +192,7 @@ $renderBrowseTable = function (string $title, array $list, string $icon, string 
     <link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="../../css/dashboard.css?v=1">
+    <link rel="stylesheet" href="../../css/dashboard.css?v=4">
 </head>
 <body>
     <a href="#main-content" class="skip-link">Skip to main content</a>
@@ -253,6 +263,7 @@ $renderBrowseTable = function (string $title, array $list, string $icon, string 
 
             <?php
                 $renderBrowseTable('Ongoing Events', $ongoingEvents, 'bi-play-circle', 'No events are currently ongoing for your barangay.', 'ongoingEventsTable');
+                $renderBrowseTable('Upcoming Events', $upcomingEvents, 'bi-calendar-event', 'No upcoming events for your barangay right now. Check back soon.', 'upcomingEventsTable');
             ?>
 
             <div class="docket-panel mb-4">
@@ -302,20 +313,19 @@ $renderBrowseTable = function (string $title, array $list, string $icon, string 
                 <?php endif; ?>
             </div>
 
-            <?php
-                $renderBrowseTable('Upcoming Events', $upcomingEvents, 'bi-calendar-event', 'No upcoming events for your barangay right now. Check back soon.', 'upcomingEventsTable');
-            ?>
-
             <?php if (!empty($pendingEvaluations)): $criteria = sked_evaluation_criteria(); $scaleLabels = sked_evaluation_scale_labels(); ?>
                 <?php foreach ($pendingEvaluations as $pe): $isReopening = $reopenEventId === (int) $pe['id']; ?>
                     <div class="modal fade" id="evalModal<?php echo (int) $pe['id']; ?>" tabindex="-1" aria-labelledby="evalModalLabel<?php echo (int) $pe['id']; ?>" aria-hidden="true"<?php echo $isReopening ? ' data-autoshow="1"' : ''; ?>>
-                        <div class="modal-dialog modal-lg modal-dialog-scrollable">
-                            <div class="modal-content create-event-modal">
-                                <div class="modal-header">
-                                    <h2 class="modal-title h5" id="evalModalLabel<?php echo (int) $pe['id']; ?>">Evaluate: <?php echo e((string) $pe['title']); ?></h2>
+                        <div class="modal-dialog modal-xl modal-dialog-scrollable evaluation-dialog">
+                            <div class="modal-content evaluation-modal">
+                                <div class="modal-header evaluation-modal-header">
+                                    <div>
+                                        <div class="evaluation-modal-kicker"><i class="bi bi-stars me-1"></i>Event evaluation</div>
+                                        <h2 class="modal-title h5" id="evalModalLabel<?php echo (int) $pe['id']; ?>"><?php echo e((string) $pe['title']); ?></h2>
+                                    </div>
                                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                                 </div>
-                                <form method="post" action="events.php">
+                                <form method="post" action="events.php" class="evaluation-form">
                                     <div class="modal-body">
                                         <input type="hidden" name="csrf_token" value="<?php echo e((string) $_SESSION['csrf_yevents_token']); ?>">
                                         <input type="hidden" name="action" value="evaluate">
@@ -323,7 +333,7 @@ $renderBrowseTable = function (string $title, array $list, string $icon, string 
 
                                         <?php if ($isReopening): ?><?php sked_render_form_errors($formErrors); ?><?php endif; ?>
 
-                                        <p class="small text-secondary">Rate how much you agree with each statement, then share any suggestions at the end. Submitting finalizes your attendance and awards evaluation points.</p>
+                                        <p class="evaluation-intro">Rate each statement from 1 to 5 stars, then share any suggestions at the end. Submitting finalizes your attendance and awards evaluation points.</p>
 
                                         <?php $currentGroup = null; foreach ($criteria as $key => $c): ?>
                                             <?php if ($c['group'] !== $currentGroup): $currentGroup = $c['group']; ?>
@@ -340,12 +350,12 @@ $renderBrowseTable = function (string $title, array $list, string $icon, string 
                                             </div>
                                         <?php endforeach; ?>
 
-                                        <div class="mt-3">
+                                        <div class="evaluation-comments">
                                             <label for="evalComments<?php echo (int) $pe['id']; ?>" class="form-label small">What suggestions do you have to improve future SK events? <span class="text-secondary fw-normal">(optional)</span></label>
                                             <textarea id="evalComments<?php echo (int) $pe['id']; ?>" name="comments" class="form-control form-control-sm" rows="3" maxlength="1000"><?php echo e($isReopening ? sked_old('comments') : ''); ?></textarea>
                                         </div>
                                     </div>
-                                    <div class="modal-footer">
+                                    <div class="modal-footer evaluation-footer">
                                         <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
                                         <button type="submit" class="btn btn-sked btn-sm"><i class="bi bi-check-lg me-1"></i>Submit Evaluation</button>
                                     </div>
@@ -361,12 +371,117 @@ $renderBrowseTable = function (string $title, array $list, string $icon, string 
     </div>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     <?php sked_render_autoshow_modals_script(); ?>
-    <script src="../../js/table-tools.js"></script>
+    <script src="../../js/table-tools.js?v=4"></script>
     <script>
         ['ongoingEventsTable', 'upcomingEventsTable'].forEach(function (id) {
             new SkedTableTools('#' + id, { pageSize: 8, filters: [{ label: 'Scope' }] });
         });
         new SkedTableTools('#pastEventsTable', { pageSize: 8, filters: [{ label: 'My Status' }] });
+
+        document.querySelectorAll('.evaluation-modal .modal-body').forEach(function (body) {
+            var section = null;
+            var list = null;
+
+            Array.prototype.slice.call(body.children).forEach(function (node) {
+                if (node.matches && node.matches('h3.h6')) {
+                    section = document.createElement('section');
+                    section.className = 'evaluation-section';
+                    list = document.createElement('div');
+                    list.className = 'evaluation-section-list';
+
+                    node.className = 'evaluation-section-title';
+                    body.insertBefore(section, node);
+                    section.appendChild(node);
+                    section.appendChild(list);
+                    return;
+                }
+
+                if (section && list && node.classList && node.classList.contains('snapshot-row')) {
+                    node.classList.add('evaluation-question-row');
+                    list.appendChild(node);
+                }
+            });
+        });
+
+        document.querySelectorAll('.evaluation-modal select[name^="criteria["]').forEach(function (select) {
+            var row = select.closest('.snapshot-row');
+            if (!row) { return; }
+
+            var wrap = document.createElement('div');
+            wrap.className = 'evaluation-rating-wrap';
+
+            var stars = document.createElement('div');
+            stars.className = 'eval-star-group';
+            stars.setAttribute('role', 'radiogroup');
+            stars.setAttribute('aria-label', select.getAttribute('aria-label') || 'Evaluation score');
+
+            var helper = document.createElement('span');
+            helper.className = 'eval-star-text';
+
+            function ratingLabel(value) {
+                var option = select.querySelector('option[value="' + value + '"]');
+                return option ? option.textContent.replace(/\s+/g, ' ').trim() : 'Select rating';
+            }
+
+            var starEls = [];
+
+            // Filled gold up to `value`, hollow outline beyond it — no radio
+            // inputs anywhere, just buttons whose icon glyph and color change.
+            function setStarsFilledTo(value) {
+                starEls.forEach(function (star) {
+                    var filled = Number(star.dataset.value) <= value;
+                    star.querySelector('i').className = 'bi ' + (filled ? 'bi-star-fill' : 'bi-star');
+                });
+            }
+
+            function commit(value) {
+                select.value = String(value);
+                starEls.forEach(function (star) {
+                    var active = Number(star.dataset.value) <= value;
+                    star.classList.toggle('is-active', active);
+                    star.setAttribute('aria-checked', Number(star.dataset.value) === value ? 'true' : 'false');
+                });
+                setStarsFilledTo(value);
+                helper.textContent = value > 0 ? ratingLabel(value) : 'Select rating';
+            }
+
+            for (var i = 1; i <= 5; i++) {
+                (function (i) {
+                    var star = document.createElement('button');
+                    star.type = 'button';
+                    star.className = 'eval-star';
+                    star.dataset.value = String(i);
+                    star.title = ratingLabel(i);
+                    star.setAttribute('aria-label', ratingLabel(i));
+                    star.setAttribute('role', 'radio');
+                    star.setAttribute('aria-checked', 'false');
+                    star.innerHTML = '<i class="bi bi-star"></i>';
+
+                    star.addEventListener('click', function () { commit(i); });
+                    star.addEventListener('mouseenter', function () { setStarsFilledTo(i); });
+                    star.addEventListener('mouseleave', function () { setStarsFilledTo(Number(select.value) || 0); });
+                    star.addEventListener('focus', function () { setStarsFilledTo(i); });
+                    star.addEventListener('blur', function () { setStarsFilledTo(Number(select.value) || 0); });
+
+                    starEls.push(star);
+                    stars.appendChild(star);
+                })(i);
+            }
+
+            // A required field that's display:none can silently block native
+            // form submission in some browsers with no visible error — the
+            // backend already rejects an incomplete submission with a proper
+            // in-modal message, so client-side validation isn't load-bearing.
+            select.required = false;
+            select.classList.add('eval-native-select');
+            select.setAttribute('aria-hidden', 'true');
+            select.tabIndex = -1;
+
+            wrap.appendChild(stars);
+            wrap.appendChild(helper);
+            row.appendChild(wrap);
+            commit(Number(select.value || 0));
+        });
     </script>
 </body>
 </html>

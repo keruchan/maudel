@@ -48,7 +48,7 @@ $currentKey = (string) $engagement['level']['key'];
     <link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="../../css/dashboard.css?v=4">
+    <link rel="stylesheet" href="../../css/dashboard.css?v=2">
     <style>
         .level-badge { display:inline-flex; align-items:center; justify-content:center; width:64px; height:64px; border-radius:50%; background:linear-gradient(135deg,#4338ca,#818cf8); color:#fff; font-size:1.75rem; }
         .level-progress { height:10px; border-radius:999px; background:#e5e7f2; overflow:hidden; }
@@ -197,7 +197,7 @@ $currentKey = (string) $engagement['level']['key'];
         </main>
     </div>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="../../js/table-tools.js"></script>
+    <script src="../../js/table-tools.js?v=4"></script>
     <script>
         new SkedTableTools('#pointsHistoryTable', { pageSize: 10 });
     </script>

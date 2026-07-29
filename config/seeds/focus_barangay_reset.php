@@ -237,7 +237,7 @@ function educationFor(int $age): string
 }
 function workStatusFor(int $age): string
 {
-    if ($age <= 20) return rweighted(['N/A (Hindi Naaangkop)' => 45, 'Currently Looking for a Job (Kasalukuyang Naghahanap ng Trabaho)' => 15, 'Unemployed (Walang Trabaho)' => 20, 'Employed (Empleyado)' => 20]);
+    if ($age <= 20) return rweighted(['Currently Looking for a Job (Kasalukuyang Naghahanap ng Trabaho)' => 25, 'Unemployed (Walang Trabaho)' => 20, 'Employed (Empleyado)' => 20, 'Not Interested Looking for a Job (Hindi Interesadong sa Paghahanap ng Trabaho)' => 35]);
     return rweighted(['Employed (Empleyado)' => 45, 'Self-Employed (Sa sarili nagtatrabaho)' => 15, 'Unemployed (Walang Trabaho)' => 15, 'Currently Looking for a Job (Kasalukuyang Naghahanap ng Trabaho)' => 20, 'Not Interested Looking for a Job (Hindi Interesadong sa Paghahanap ng Trabaho)' => 5]);
 }
 function buildProfileData(int $age, string $sex): array
@@ -268,7 +268,6 @@ function buildProfileData(int $age, string $sex): array
         'civil_status' => $age >= 25 ? rweighted(['Single (Walang Asawa)' => 55, 'Married (Kasal/May Asawa)' => 30, 'Live-In (Nakikisama)' => 10, 'Separated (Hiwalay)' => 5]) : 'Single (Walang Asawa)',
         'gender_identity' => $genderIdentity,
         'lgbtqia_member' => mt_rand(1, 100) <= 10 ? 1 : 0,
-        'facebook_name' => strtolower(str_replace(' ', '.', $sex === 'male' ? rpick($givenMale) : rpick($givenFemale))) . mt_rand(10, 99),
         'num_children' => $age >= 22 ? rweighted([0 => 60, 1 => 25, 2 => 10, 3 => 5]) : 0,
         'educational_attainment' => educationFor($age),
         'work_status' => workStatusFor($age),
@@ -277,7 +276,7 @@ function buildProfileData(int $age, string $sex): array
         'national_voter' => $age >= 18 ? (mt_rand(1, 100) <= 80 ? '1' : '0') : '0',
         'voted_last_election' => $age >= 18 ? (mt_rand(1, 100) <= 70 ? '1' : '0') : '0',
         'attended_kk_assembly' => $attended,
-        'kk_assembly_times' => $attended === '1' ? mt_rand(1, 2) : null,
+        'kk_assembly_times' => $attended === '1' ? rpick([1, 3, 5]) : null,
         'kk_assembly_absence_reason' => $attended === '0' ? rpick($profilingOptions['kk_assembly_absence_reason']) : null,
         'classifications' => $classifications,
         'specific_needs' => $specificNeeds,
@@ -315,7 +314,7 @@ $barangayEventTemplates = [
     ['Blood Letting Activity', 'Health'],
     ['Career Orientation Seminar', 'Education'],
     ['Disaster Preparedness Drill', 'Peace Building and Security'],
-    ['Creative Arts Contest', 'Social Inclusion and Equity'],
+    ['Creative Arts Contest', 'Social Inclusion & Equity'],
     ['Barangay Feeding Program', 'Health'],
     ['Mental Health Awareness Seminar', 'Health'],
     ['Basic Life Support Training', 'Health'],
@@ -500,7 +499,7 @@ echo "Federation events created: {$fedEventsCreated}, participations: {$fedParti
 $pollTemplates = [
     ['What youth program should we prioritize next quarter?', 'Governance', ['Sports & Wellness', 'Livelihood Training', 'Environmental Clean-up', 'Educational Assistance']],
     ['Which day works best for the next KK Assembly?', 'Governance', ['Saturday morning', 'Saturday afternoon', 'Sunday morning', 'Sunday afternoon']],
-    ['What should our next community project focus on?', 'Social Inclusion and Equity', ['Youth with disabilities support', 'Solo parent assistance', 'Out-of-school youth outreach', 'Senior-youth bridge program']],
+    ['What should our next community project focus on?', 'Social Inclusion & Equity', ['Youth with disabilities support', 'Solo parent assistance', 'Out-of-school youth outreach', 'Senior-youth bridge program']],
     ['Preferred venue for the Youth Sports Fest?', 'Health', ['Barangay covered court', 'Municipal gym', 'School grounds']],
     ['Best format for the Career Orientation Seminar?', 'Education', ['Half-day on-site', 'Full-day with employers', 'Online webinar']],
     ['Most useful livelihood skill to train next?', 'Economic Empowerment', ['Baking', 'Basic computer/office skills', 'Urban gardening', 'Handicrafts']],

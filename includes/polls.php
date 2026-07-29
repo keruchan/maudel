@@ -13,6 +13,60 @@
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/points.php';
 
+function sked_polls_supports_closes_at(): bool
+{
+    static $supports = null;
+    if ($supports !== null) {
+        return $supports;
+    }
+    try {
+        $stmt = sked_db()->query("SHOW COLUMNS FROM polls LIKE 'closes_at'");
+        $supports = $stmt !== false && $stmt->fetch() !== false;
+    } catch (Throwable $e) {
+        $supports = false;
+    }
+    return $supports;
+}
+
+function sked_poll_normalize_closes_at(string $raw, array &$errors, bool $required = false): ?string
+{
+    $raw = trim($raw);
+    if ($raw === '') {
+        if ($required) {
+            $errors[] = 'Please set when the poll should close.';
+        }
+        return null;
+    }
+
+    $dt = DateTime::createFromFormat('!Y-m-d\TH:i', $raw) ?: DateTime::createFromFormat('!Y-m-d H:i:s', $raw);
+    $parseErrors = DateTime::getLastErrors();
+    if ($dt === false || ($parseErrors && ($parseErrors['warning_count'] || $parseErrors['error_count']))) {
+        $errors[] = 'Invalid poll close date/time.';
+        return null;
+    }
+    if ($dt <= new DateTime()) {
+        $errors[] = 'Poll close date/time must be in the future.';
+        return null;
+    }
+
+    return $dt->format('Y-m-d H:i:s');
+}
+
+function sked_close_expired_polls(?int $barangayId = null): void
+{
+    if (!sked_polls_supports_closes_at()) {
+        return;
+    }
+    $sql = "UPDATE polls SET status = 'closed', closed_at = COALESCE(closed_at, NOW())
+            WHERE status = 'open' AND closes_at IS NOT NULL AND closes_at <= NOW()";
+    $params = [];
+    if ($barangayId !== null && $barangayId > 0) {
+        $sql .= ' AND barangay_id = :b';
+        $params['b'] = $barangayId;
+    }
+    sked_db()->prepare($sql)->execute($params);
+}
+
 /**
  * Create a poll with its options. Barangay is taken from the SK creator.
  * $category is optional (from sked_interest_categories()) — tagging a poll
@@ -23,7 +77,7 @@ require_once __DIR__ . '/points.php';
  * @param string[] $options Raw option text list; blanks are dropped, duplicates collapsed.
  * @return array{ok:bool,errors:array<int,string>,poll_id?:int}
  */
-function sked_create_poll(array $creator, string $question, array $options, bool $publish = false, string $category = ''): array
+function sked_create_poll(array $creator, string $question, array $options, bool $publish = false, string $category = '', string $closesAtInput = ''): array
 {
     $errors = [];
     $barangayId = (int) ($creator['barangay_id'] ?? 0);
@@ -37,6 +91,7 @@ function sked_create_poll(array $creator, string $question, array $options, bool
     }
 
     $category = trim($category);
+    $closesAt = sked_poll_normalize_closes_at($closesAtInput, $errors, $publish);
 
     $clean = [];
     foreach ($options as $opt) {
@@ -56,11 +111,9 @@ function sked_create_poll(array $creator, string $question, array $options, bool
     $pdo = sked_db();
     $pdo->beginTransaction();
     try {
-        $stmt = $pdo->prepare(
-            'INSERT INTO polls (barangay_id, question, category, status, created_by, created_by_role, created_by_name)
-             VALUES (:barangay_id, :question, :category, :status, :created_by, :created_by_role, :created_by_name)'
-        );
-        $stmt->execute([
+        $fields = 'barangay_id, question, category, status, created_by, created_by_role, created_by_name';
+        $values = ':barangay_id, :question, :category, :status, :created_by, :created_by_role, :created_by_name';
+        $params = [
             'barangay_id' => $barangayId,
             'question' => $question,
             'category' => $category !== '' ? $category : null,
@@ -68,7 +121,14 @@ function sked_create_poll(array $creator, string $question, array $options, bool
             'created_by' => (int) ($creator['id'] ?? 0) ?: null,
             'created_by_role' => (string) ($creator['role'] ?? '') ?: null,
             'created_by_name' => (string) ($creator['name'] ?? '') ?: null,
-        ]);
+        ];
+        if (sked_polls_supports_closes_at()) {
+            $fields .= ', closes_at';
+            $values .= ', :closes_at';
+            $params['closes_at'] = $closesAt;
+        }
+        $stmt = $pdo->prepare("INSERT INTO polls ($fields) VALUES ($values)");
+        $stmt->execute($params);
         $pollId = (int) $pdo->lastInsertId();
 
         $ins = $pdo->prepare('INSERT INTO poll_options (poll_id, option_text, sort_order) VALUES (:p, :t, :o)');
@@ -92,7 +152,8 @@ function sked_polls_for_barangay(int $barangayId): array
     if ($barangayId <= 0) {
         return [];
     }
-    $stmt = sked_db()->prepare('SELECT * FROM polls WHERE barangay_id = :b ORDER BY created_at DESC');
+    sked_close_expired_polls($barangayId);
+    $stmt = sked_db()->prepare("SELECT * FROM polls WHERE barangay_id = :b ORDER BY FIELD(status, 'open', 'draft', 'closed'), created_at DESC");
     $stmt->execute(['b' => $barangayId]);
     return $stmt->fetchAll();
 }
@@ -103,6 +164,7 @@ function sked_open_polls_for_youth(int $barangayId): array
     if ($barangayId <= 0) {
         return [];
     }
+    sked_close_expired_polls($barangayId);
     $stmt = sked_db()->prepare("SELECT * FROM polls WHERE barangay_id = :b AND status = 'open' ORDER BY created_at DESC");
     $stmt->execute(['b' => $barangayId]);
     return $stmt->fetchAll();
@@ -114,6 +176,7 @@ function sked_get_poll(int $pollId): ?array
     if ($pollId <= 0) {
         return null;
     }
+    sked_close_expired_polls();
     $stmt = sked_db()->prepare('SELECT * FROM polls WHERE id = :id LIMIT 1');
     $stmt->execute(['id' => $pollId]);
     $row = $stmt->fetch();
@@ -210,7 +273,7 @@ function sked_cast_poll_vote(int $userId, int $youthBarangayId, int $pollId, int
 }
 
 /** Move a poll to open or closed. Barangay-scoped by caller. */
-function sked_set_poll_status(int $pollId, int $actorBarangayId, string $newStatus): array
+function sked_set_poll_status(int $pollId, int $actorBarangayId, string $newStatus, string $closesAtInput = ''): array
 {
     $poll = sked_get_poll($pollId);
     if ($poll === null || (int) $poll['barangay_id'] !== $actorBarangayId) {
@@ -220,9 +283,25 @@ function sked_set_poll_status(int $pollId, int $actorBarangayId, string $newStat
         return ['ok' => false, 'error' => 'Invalid status.'];
     }
 
+    $errors = [];
+    $closesAt = null;
+    if ($newStatus === 'open') {
+        $existingClose = !empty($poll['closes_at']) ? (string) $poll['closes_at'] : '';
+        $closesAt = sked_poll_normalize_closes_at($closesAtInput !== '' ? $closesAtInput : $existingClose, $errors, true);
+        if (!empty($errors)) {
+            return ['ok' => false, 'error' => implode(' ', $errors)];
+        }
+    }
+
     $closedAt = $newStatus === 'closed' ? 'NOW()' : 'NULL';
-    sked_db()->prepare("UPDATE polls SET status = :s, closed_at = $closedAt WHERE id = :id")
-        ->execute(['s' => $newStatus, 'id' => $pollId]);
+    $sql = "UPDATE polls SET status = :s, closed_at = $closedAt";
+    $params = ['s' => $newStatus, 'id' => $pollId];
+    if ($newStatus === 'open' && sked_polls_supports_closes_at()) {
+        $sql .= ', closes_at = :closes_at';
+        $params['closes_at'] = $closesAt;
+    }
+    $sql .= ' WHERE id = :id';
+    sked_db()->prepare($sql)->execute($params);
 
     return ['ok' => true];
 }

@@ -61,7 +61,7 @@ function sked_youths_for_barangay(int $barangayId): array
         return [];
     }
     $stmt = sked_db()->prepare(
-        "SELECT u.id, u.name, u.status, u.email, u.mobile, u.birthdate, u.username, u.purok, u.created_at,
+        "SELECT u.id, u.name, u.status, u.verified, u.email, u.mobile, u.birthdate, u.username, u.purok, u.created_at,
                 (yp.user_id IS NOT NULL) AS has_profile
            FROM users u
       LEFT JOIN youth_profiles yp ON yp.user_id = u.id
@@ -73,6 +73,7 @@ function sked_youths_for_barangay(int $barangayId): array
 
     foreach ($rows as &$row) {
         $row['id'] = (int) $row['id'];
+        $row['verified'] = (bool) $row['verified'];
         $row['has_profile'] = (bool) $row['has_profile'];
         $row['age'] = !empty($row['birthdate']) ? sked_age_from_birthdate((string) $row['birthdate']) : null;
     }
@@ -89,13 +90,17 @@ function sked_youth_in_barangay(int $youthId, int $barangayId): ?array
         return null;
     }
     $stmt = sked_db()->prepare(
-        "SELECT id, name, status, barangay_id FROM users
+        "SELECT id, name, status, verified, barangay_id FROM users
           WHERE id = :id AND role = 'youth' AND status IN ('pending','active') AND barangay_id = :bgy
           LIMIT 1"
     );
     $stmt->execute(['id' => $youthId, 'bgy' => $barangayId]);
     $row = $stmt->fetch();
-    return $row === false ? null : $row;
+    if ($row === false) {
+        return null;
+    }
+    $row['verified'] = (bool) $row['verified'];
+    return $row;
 }
 
 /**
@@ -121,7 +126,7 @@ function sked_kk_members_for_barangay(int $barangayId, string $statusFilter = ''
     }
 
     $stmt = sked_db()->prepare(
-        "SELECT u.id, u.name, u.status, u.email, u.mobile, u.birthdate, u.sex_assigned_at_birth,
+        "SELECT u.id, u.name, u.status, u.verified, u.email, u.mobile, u.birthdate, u.sex_assigned_at_birth,
                 u.username, u.purok, u.created_at,
                 (yp.user_id IS NOT NULL) AS has_profile,
                 COALESCE(pts.total, 0) AS points
@@ -137,6 +142,7 @@ function sked_kk_members_for_barangay(int $barangayId, string $statusFilter = ''
 
     foreach ($rows as &$row) {
         $row['id'] = (int) $row['id'];
+        $row['verified'] = (bool) $row['verified'];
         $row['has_profile'] = (bool) $row['has_profile'];
         $row['points'] = (int) $row['points'];
         $row['age'] = !empty($row['birthdate']) ? sked_age_from_birthdate((string) $row['birthdate']) : null;

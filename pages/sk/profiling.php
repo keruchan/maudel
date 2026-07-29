@@ -28,7 +28,10 @@ $todayLabel = date('l, F j, Y');
 $barangayName = $barangayId > 0 ? sked_barangay_name($barangayId) : '';
 
 $youths = $barangayId > 0 ? sked_youths_for_barangay($barangayId) : [];
-$completedCount = count(array_filter($youths, static fn($y) => $y['has_profile']));
+$verifiedYouths = array_values(array_filter($youths, static fn($y) => (string) $y['status'] === 'active' && !empty($y['verified'])));
+$completedCount = count(array_filter($verifiedYouths, static fn($y) => $y['has_profile']));
+$eligibleCount = count($verifiedYouths);
+$lockedCount = count($youths) - $eligibleCount;
 ?>
 <!doctype html>
 <html lang="en">
@@ -42,7 +45,7 @@ $completedCount = count(array_filter($youths, static fn($y) => $y['has_profile']
     <link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="../../css/dashboard.css?v=1">
+    <link rel="stylesheet" href="../../css/dashboard.css?v=2">
 </head>
 <body>
     <a href="#main-content" class="skip-link">Skip to main content</a>
@@ -57,7 +60,7 @@ $completedCount = count(array_filter($youths, static fn($y) => $y['has_profile']
                     <div>
                         <div class="eyebrow">Barangay <?php echo e($barangayName !== '' ? $barangayName : 'Council'); ?> &middot; <?php echo e($todayLabel); ?></div>
                         <h1 class="page-title">KK Profiling Roster</h1>
-                        <p class="text-secondary meta-copy mb-0">Fill out or update a KK member's profiling form on their behalf — useful during a face-to-face profiling drive.</p>
+                        <p class="text-secondary meta-copy mb-0">Fill out or update a verified KK member's profiling form on their behalf.</p>
                     </div>
                     <div class="d-flex align-items-center gap-2">
                         <?php render_sked_notification_bell('header'); ?><span class="officer-chip">
@@ -96,8 +99,8 @@ $completedCount = count(array_filter($youths, static fn($y) => $y['has_profile']
                             <span class="ledger-icon"><i class="bi bi-hourglass-split"></i></span>
                             <span class="ledger-tag">Not yet</span>
                         </div>
-                        <div class="ledger-value tabular"><?php echo (int) (count($youths) - $completedCount); ?></div>
-                        <div class="ledger-caption">Still need profiling</div>
+                        <div class="ledger-value tabular"><?php echo (int) ($eligibleCount - $completedCount); ?></div>
+                        <div class="ledger-caption">Verified, still need profiling</div>
                     </div>
                 </div>
                 <div class="col-sm-4">
@@ -106,8 +109,8 @@ $completedCount = count(array_filter($youths, static fn($y) => $y['has_profile']
                             <span class="ledger-icon"><i class="bi bi-people"></i></span>
                             <span class="ledger-tag">Total</span>
                         </div>
-                        <div class="ledger-value tabular"><?php echo count($youths); ?></div>
-                        <div class="ledger-caption">Pending + verified KK members</div>
+                        <div class="ledger-value tabular"><?php echo (int) $lockedCount; ?></div>
+                        <div class="ledger-caption">Locked until verification</div>
                     </div>
                 </div>
             </section>
@@ -136,7 +139,7 @@ $completedCount = count(array_filter($youths, static fn($y) => $y['has_profile']
                                 </tr>
                             </thead>
                             <tbody>
-                                <?php foreach ($youths as $y): ?>
+                                <?php foreach ($youths as $y): $canProfile = (string) $y['status'] === 'active' && !empty($y['verified']); ?>
                                     <tr>
                                         <td>
                                             <div class="fw-semibold"><?php echo e((string) $y['name']); ?></div>
@@ -145,16 +148,24 @@ $completedCount = count(array_filter($youths, static fn($y) => $y['has_profile']
                                         <td><?php echo $y['age'] !== null ? (int) $y['age'] . ' yrs' : '—'; ?></td>
                                         <td><span class="badge <?php echo $y['status'] === 'active' ? 'text-bg-success' : 'text-bg-secondary'; ?> text-capitalize"><?php echo e((string) $y['status']); ?></span></td>
                                         <td>
-                                            <?php if ($y['has_profile']): ?>
+                                            <?php if (!$canProfile): ?>
+                                                <span class="badge text-bg-secondary"><i class="bi bi-lock-fill me-1"></i>Locked</span>
+                                            <?php elseif ($y['has_profile']): ?>
                                                 <span class="badge text-bg-success"><i class="bi bi-check-lg me-1"></i>Complete</span>
                                             <?php else: ?>
                                                 <span class="badge text-bg-warning"><i class="bi bi-dash-circle me-1"></i>Not yet</span>
                                             <?php endif; ?>
                                         </td>
                                         <td class="text-end">
-                                            <a href="../manage/kk_profile.php?youth_id=<?php echo (int) $y['id']; ?>" class="btn btn-sm btn-sked">
-                                                <i class="bi <?php echo $y['has_profile'] ? 'bi-pencil-square' : 'bi-clipboard-plus'; ?>"></i><?php echo $y['has_profile'] ? 'Edit' : 'Fill out'; ?>
-                                            </a>
+                                            <?php if ($canProfile): ?>
+                                                <a href="../manage/kk_profile.php?youth_id=<?php echo (int) $y['id']; ?>" class="btn btn-sm btn-sked">
+                                                    <i class="bi <?php echo $y['has_profile'] ? 'bi-pencil-square' : 'bi-clipboard-plus'; ?>"></i><?php echo $y['has_profile'] ? 'Edit' : 'Fill out'; ?>
+                                                </a>
+                                            <?php else: ?>
+                                                <button type="button" class="btn btn-sm btn-outline-secondary" disabled title="KK profiling unlocks after SK verification.">
+                                                    <i class="bi bi-lock-fill me-1"></i>Locked
+                                                </button>
+                                            <?php endif; ?>
                                         </td>
                                     </tr>
                                 <?php endforeach; ?>
@@ -169,7 +180,7 @@ $completedCount = count(array_filter($youths, static fn($y) => $y['has_profile']
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="../../js/table-tools.js"></script>
+    <script src="../../js/table-tools.js?v=4"></script>
     <script>
         new SkedTableTools('#profilingTable', { pageSize: 12, filters: [{ label: 'Status' }, { label: 'KK Profile' }] });
     </script>

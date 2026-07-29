@@ -13,18 +13,75 @@
 
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/audit.php';
+require_once __DIR__ . '/notifications.php';
 
 const SKED_REPORT_UPLOAD_MAX_BYTES = 10 * 1024 * 1024; // 10 MB
 const SKED_REPORT_UPLOAD_ALLOWED_EXT = ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'jpg', 'jpeg', 'png'];
 
-/** Valid report types and the role each is submitted to. */
+/**
+ * Valid report types and the role each is submitted to. All SK/PPSK report
+ * types route straight to DILG — there is no intermediate reviewer.
+ */
 function sked_report_target_role(string $type): ?string
 {
+    return in_array($type, ['monthly', 'interbarangay', 'minutes', 'dismissal_recommendation'], true)
+        ? 'dilg'
+        : null;
+}
+
+/** Human label for a report type, for filter buttons and badges. */
+function sked_report_type_label(string $type): string
+{
     return match ($type) {
-        'monthly' => 'ppsk',
-        'interbarangay', 'minutes', 'dismissal_recommendation' => 'dilg',
-        default => null,
+        'monthly' => 'Monthly Report',
+        'interbarangay' => 'Event Report',
+        'minutes' => 'Minutes',
+        'dismissal_recommendation' => 'Dismissal Recommendation',
+        'turnover' => 'Turnover',
+        default => ucfirst($type),
     };
+}
+
+/** Display label for a report's status, independent of the stored enum value. */
+function sked_report_status_label(string $status): string
+{
+    return match ($status) {
+        'reviewed' => 'Acknowledged',
+        'rework' => 'For Rework',
+        'rejected' => 'Rejected',
+        default => 'Pending',
+    };
+}
+
+/** Bootstrap badge class for report status chips. */
+function sked_report_status_badge_class(string $status): string
+{
+    return match ($status) {
+        'reviewed' => 'text-bg-success',
+        'rework' => 'text-bg-warning',
+        'rejected' => 'text-bg-danger',
+        default => 'text-bg-secondary',
+    };
+}
+
+/** Storage values accepted for report review filters. */
+function sked_report_review_statuses(): array
+{
+    return ['submitted', 'reviewed', 'rework', 'rejected'];
+}
+
+/** Keep local installs aligned with the report review migration. */
+function sked_ensure_report_review_schema(): void
+{
+    static $done = false;
+    if ($done) {
+        return;
+    }
+
+    $db = sked_db();
+    $db->exec("ALTER TABLE reports MODIFY COLUMN status ENUM('submitted','reviewed','rework','rejected') NOT NULL DEFAULT 'submitted'");
+    $db->exec('ALTER TABLE reports ADD COLUMN IF NOT EXISTS review_comments TEXT NULL AFTER reviewed_by');
+    $done = true;
 }
 
 /** Whether a report form included a file attachment. */
@@ -228,6 +285,17 @@ function sked_submit_report(array $submitter, string $type, string $title, strin
         }
 
         $db->commit();
+
+        if ($targetRole === 'dilg' && in_array($type, ['monthly', 'interbarangay', 'minutes'], true)) {
+            $submitterName = (string) ($submitter['name'] ?? 'A submitter');
+            sked_notify_role(
+                'dilg',
+                'report',
+                'New ' . sked_report_type_label($type) . ' submitted',
+                $submitterName . ' submitted "' . $title . '" for DILG review.',
+                '../dilg/reports.php'
+            );
+        }
     } catch (PDOException $e) {
         if ($db->inTransaction()) {
             $db->rollBack();
@@ -270,6 +338,8 @@ function sked_monthly_reports_for_barangay(int $barangayId): array
 /** Reports addressed to a role (ppsk sees monthly; dilg sees the rest), optionally filtered by type/status. */
 function sked_reports_for_role(string $role, array $filters = []): array
 {
+    sked_ensure_report_review_schema();
+
     $where = ['target_role = :role'];
     $params = ['role' => $role];
 
@@ -279,7 +349,7 @@ function sked_reports_for_role(string $role, array $filters = []): array
         $params['type'] = $type;
     }
     $status = (string) ($filters['status'] ?? '');
-    if (in_array($status, ['submitted', 'reviewed'], true)) {
+    if (in_array($status, sked_report_review_statuses(), true)) {
         $where[] = 'status = :status';
         $params['status'] = $status;
     }
@@ -293,16 +363,122 @@ function sked_reports_for_role(string $role, array $filters = []): array
 /** Mark a report reviewed. */
 function sked_mark_report_reviewed(int $reportId, int $reviewerId): bool
 {
+    sked_ensure_report_review_schema();
+
     $stmt = sked_db()->prepare(
-        "UPDATE reports SET status = 'reviewed', reviewed_at = NOW(), reviewed_by = :r WHERE id = :id AND status = 'submitted'"
+        "UPDATE reports SET status = 'reviewed', reviewed_at = NOW(), reviewed_by = :r, review_comments = NULL WHERE id = :id AND status = 'submitted'"
     );
     $stmt->execute(['r' => $reviewerId, 'id' => $reportId]);
     return $stmt->rowCount() > 0;
 }
 
+/**
+ * DILG reviews a report with an action: acknowledge, request rework, or reject.
+ * Rework/reject comments are persisted and included in the submitter notice.
+ *
+ * @return array{ok:bool,error?:string}
+ */
+function sked_review_report(int $reportId, int $dilgUserId, string $status, string $comments = ''): array
+{
+    $report = sked_get_report($reportId);
+    if ($report === null) {
+        return ['ok' => false, 'error' => 'Report not found.'];
+    }
+    if ((string) ($report['target_role'] ?? '') !== 'dilg') {
+        return ['ok' => false, 'error' => 'This report is not assigned to DILG.'];
+    }
+    if ((string) ($report['status'] ?? '') !== 'submitted') {
+        return ['ok' => false, 'error' => 'This report has already been actioned.'];
+    }
+    if (!in_array($status, ['reviewed', 'rework', 'rejected'], true)) {
+        return ['ok' => false, 'error' => 'Invalid review action.'];
+    }
+
+    $comments = trim($comments);
+    if (in_array($status, ['rework', 'rejected'], true) && $comments === '') {
+        return ['ok' => false, 'error' => 'Please add comments so the submitter knows what to fix.'];
+    }
+
+    sked_ensure_report_review_schema();
+    $stmt = sked_db()->prepare(
+        "UPDATE reports
+            SET status = :status,
+                reviewed_at = NOW(),
+                reviewed_by = :reviewer,
+                review_comments = :comments
+          WHERE id = :id AND status = 'submitted'"
+    );
+    $stmt->execute([
+        'status' => $status,
+        'reviewer' => $dilgUserId,
+        'comments' => $comments !== '' ? $comments : null,
+        'id' => $reportId,
+    ]);
+    if ($stmt->rowCount() <= 0) {
+        return ['ok' => false, 'error' => 'This report has already been actioned.'];
+    }
+
+    $submittedBy = (int) ($report['submitted_by'] ?? 0);
+    $submittedByRole = (string) ($report['submitted_by_role'] ?? '');
+    if ($submittedBy > 0 && in_array($submittedByRole, ['sk', 'ppsk'], true)) {
+        $link = $submittedByRole === 'sk' ? '../sk/reports.php' : '../ppsk/reports.php';
+        $statusLabel = sked_report_status_label($status);
+        $message = 'DILG marked your ' . sked_report_type_label((string) $report['type']) . ' "' . (string) $report['title'] . '" as ' . $statusLabel . '.';
+        if ($comments !== '') {
+            $message .= ' Comments: ' . $comments;
+        }
+        sked_notify($submittedBy, 'report', 'DILG reviewed your report', $message, $link);
+    }
+
+    $auditAction = match ($status) {
+        'rework' => 'report_rework_requested',
+        'rejected' => 'report_rejected',
+        default => 'report_acknowledged',
+    };
+    sked_audit($dilgUserId, $auditAction, 'report', $reportId, (string) $report['title']);
+    return ['ok' => true];
+}
+
+/**
+ * DILG acknowledges a report: marks it reviewed, notifies whoever submitted
+ * it (if a real SK/PPSK account, not a demo login), and audit-logs the action.
+ *
+ * @return array{ok:bool,error?:string}
+ */
+function sked_acknowledge_report(int $reportId, int $dilgUserId): array
+{
+    return sked_review_report($reportId, $dilgUserId, 'reviewed', '');
+
+    $report = sked_get_report($reportId);
+    if ($report === null) {
+        return ['ok' => false, 'error' => 'Report not found.'];
+    }
+    if (!sked_mark_report_reviewed($reportId, $dilgUserId)) {
+        return ['ok' => false, 'error' => 'This report was already acknowledged.'];
+    }
+
+    $submittedBy = (int) ($report['submitted_by'] ?? 0);
+    $submittedByRole = (string) ($report['submitted_by_role'] ?? '');
+    if ($submittedBy > 0 && in_array($submittedByRole, ['sk', 'ppsk'], true)) {
+        $link = $submittedByRole === 'sk' ? '../sk/reports.php' : '../ppsk/reports.php';
+        sked_notify(
+            $submittedBy,
+            'report',
+            'Your report was acknowledged',
+            'DILG acknowledged your ' . sked_report_type_label((string) $report['type']) . ' — "' . (string) $report['title'] . '".',
+            $link
+        );
+    }
+
+    sked_audit($dilgUserId, 'report_acknowledged', 'report', $reportId, (string) $report['title']);
+    return ['ok' => true];
+}
+
 /** A single report by id, or null. */
 function sked_get_report(int $reportId): ?array
 {
+    sked_ensure_report_review_schema();
+
     if ($reportId <= 0) {
         return null;
     }
@@ -319,8 +495,7 @@ function sked_can_access_report(array $report, string $role, int $userId, int $b
         return (string) ($report['target_role'] ?? '') === 'dilg';
     }
     if ($role === 'ppsk') {
-        return (string) ($report['target_role'] ?? '') === 'ppsk'
-            || (int) ($report['submitted_by'] ?? 0) === $userId;
+        return (int) ($report['submitted_by'] ?? 0) === $userId;
     }
     if ($role === 'sk') {
         return (int) ($report['submitted_by'] ?? 0) === $userId

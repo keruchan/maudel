@@ -14,6 +14,7 @@ require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/view.php';
 require_once __DIR__ . '/../includes/barangays.php';
 require_once __DIR__ . '/../includes/events.php';
+require_once __DIR__ . '/../includes/announcements.php';
 require_once __DIR__ . '/../includes/profiling.php';
 require_once __DIR__ . '/../includes/cbydp.php';
 require_once __DIR__ . '/../includes/abyip.php';
@@ -50,33 +51,54 @@ $isAuthenticated = $viewerDashboardPath !== null;
 $primaryCtaHref = $isAuthenticated ? $viewerDashboardPath : 'auth/login.php';
 $primaryRegisterHref = $isAuthenticated ? $viewerDashboardPath : 'auth/register.php';
 
-// Announcements = published events, scoped to what this viewer may see:
-// anonymous / non-youth visitors get municipal-wide posts only; a logged-in
-// youth also sees their own barangay's posts and any inter-barangay posts
-// that include it (same eligibility rule as the youth Browse Events page).
+// Feed = real announcements merged with published events, scoped to what
+// this viewer may see: anonymous / non-youth visitors get municipal-wide
+// posts only; a logged-in youth also sees their own barangay's posts and
+// any inter-barangay posts that include it (same eligibility rule as the
+// youth Browse Events page). See sked_public_announcements() in
+// includes/events.php for the merge/eligibility logic.
 $viewerBarangayId = ($isAuthenticated && (string) ($_SESSION['role'] ?? '') === 'youth' && !empty($_SESSION['barangay_id']))
     ? (int) $_SESSION['barangay_id']
     : null;
-$announcementEvents = sked_public_announcements($viewerBarangayId, 6);
+$feedItems = sked_public_announcements($viewerBarangayId, 6);
 
 $scopeLabels = ['barangay' => 'Barangay Post', 'interbarangay' => 'Inter-Barangay', 'municipal' => 'Municipal-Wide'];
 $announcements = [];
-foreach ($announcementEvents as $ev) {
-    $pill = !empty($ev['category']) ? (string) $ev['category'] : ($scopeLabels[$ev['scope']] ?? 'SK Post');
-    if ($ev['scope'] === 'barangay') {
-        $pill .= ' · Brgy. ' . sked_barangay_name((int) $ev['barangay_id']);
+foreach ($feedItems as $item) {
+    $isAnnouncement = ($item['feed_type'] ?? 'event') === 'announcement';
+    $pill = $isAnnouncement
+        ? ($scopeLabels[$item['scope']] ?? 'SK Post')
+        : (!empty($item['category']) ? (string) $item['category'] : ($scopeLabels[$item['scope']] ?? 'SK Post'));
+    if ($item['scope'] === 'barangay' && !empty($item['barangay_id'])) {
+        $pill .= ' · Brgy. ' . sked_barangay_name((int) $item['barangay_id']);
     }
-    $schedule = $ev['event_date'] ? date('F j, Y', strtotime((string) $ev['event_date'])) : 'Date TBA';
-    if (!empty($ev['start_time'])) {
-        $schedule .= ' · ' . date('g:i A', strtotime((string) $ev['start_time']));
+
+    if ($isAnnouncement) {
+        $schedule = !empty($item['pinned']) ? 'Pinned' : null;
+        $body = (string) $item['content'];
+        $imageUrl = sked_announcement_image_url($item, 'public/announcement_image.php');
+        $detailUrl = 'public/announcement.php?id=' . (int) $item['id'];
+    } else {
+        $schedule = $item['event_date'] ? date('F j, Y', strtotime((string) $item['event_date'])) : 'Date TBA';
+        if (!empty($item['start_time'])) {
+            $schedule .= ' · ' . date('g:i A', strtotime((string) $item['start_time']));
+        }
+        $body = !empty($item['description']) ? (string) $item['description'] : 'See your SK for details on this event.';
+        $imageUrl = sked_event_image_url($item, 'public/event_image.php');
+        $detailUrl = 'public/event.php?t=' . rawurlencode((string) $item['share_token']);
     }
+
     $announcements[] = [
+        'type_label' => $isAnnouncement ? 'Announcement' : 'Event',
+        'pill_icon' => $isAnnouncement ? 'bi-megaphone' : 'bi-people-fill',
         'pill' => $pill,
         'schedule' => $schedule,
-        'title' => (string) $ev['title'],
-        'body' => !empty($ev['description']) ? (string) $ev['description'] : 'See your SK for details on this event.',
-        'posted' => 'Posted ' . date('F j, Y', strtotime((string) $ev['created_at'])),
-        'image_url' => sked_event_image_url($ev, 'public/event_image.php'),
+        'schedule_icon' => $isAnnouncement ? 'bi-pin-angle-fill' : 'bi-calendar-event',
+        'url' => $detailUrl,
+        'title' => (string) $item['title'],
+        'body' => $body,
+        'posted' => 'Posted ' . date('F j, Y', strtotime((string) $item['created_at'])),
+        'image_url' => $imageUrl,
     ];
 }
 
@@ -993,6 +1015,16 @@ if ($geoBarangayView) {
       min-height:370px;
       display:grid;
       grid-template-columns:280px minmax(280px,.8fr) minmax(0,1fr);
+      text-decoration:none;
+      color:inherit;
+      transition:box-shadow .2s ease;
+    }
+    a.announce-slide:hover{
+      color:inherit;
+      box-shadow:0 14px 40px rgba(30,27,75,.14);
+    }
+    a.announce-slide:hover .announce-title{
+      text-decoration:underline;
     }
     .announce-rail{
       position:relative;
@@ -1044,6 +1076,22 @@ if ($geoBarangayView) {
       line-height:1.25;
       text-transform:uppercase;
     }
+    .announce-type-tag{
+      display:inline-flex;
+      align-items:center;
+      gap:.35rem;
+      max-width:100%;
+      color:#fff;
+      border-radius:8px;
+      padding:.4rem .65rem;
+      font-size:.68rem;
+      font-weight:800;
+      letter-spacing:.08em;
+      line-height:1.25;
+      text-transform:uppercase;
+    }
+    .announce-type-announcement{background:rgba(245,158,11,.28);border:1px solid rgba(245,158,11,.4);}
+    .announce-type-event{background:rgba(14,165,164,.28);border:1px solid rgba(14,165,164,.4);}
     .announce-rail-note{
       color:rgba(255,255,255,.76);
       font-size:.86rem;
@@ -1356,13 +1404,14 @@ if ($geoBarangayView) {
           <div class="carousel-inner">
             <?php foreach ($announcements as $index => $announcement): ?>
               <div class="carousel-item <?php echo $index === 0 ? 'active' : ''; ?>">
-                <div class="announce-slide">
+                <a class="announce-slide" href="<?php echo e($announcement['url']); ?>">
                   <div class="announce-rail">
                     <div>
                       <div class="announce-index"><?php echo str_pad((string) ($index + 1), 2, '0', STR_PAD_LEFT); ?></div>
                       <p class="announce-rail-note">Verified public bulletin from SKed's event and program board.</p>
                     </div>
-                    <span class="announce-pill"><i class="bi bi-people-fill"></i> <?php echo e($announcement['pill']); ?></span>
+                    <span class="announce-pill"><i class="bi <?php echo e($announcement['pill_icon']); ?>"></i> <?php echo e($announcement['pill']); ?></span>
+                    <span class="announce-type-tag announce-type-<?php echo $announcement['type_label'] === 'Announcement' ? 'announcement' : 'event'; ?>"><?php echo e($announcement['type_label']); ?></span>
                   </div>
                   <div class="announce-media">
                     <?php if ($announcement['image_url'] !== ''): ?>
@@ -1373,13 +1422,15 @@ if ($geoBarangayView) {
                   </div>
                   <div class="announce-copy">
                     <div class="announce-meta">
-                      <span class="announce-schedule"><i class="bi bi-calendar-event"></i> <?php echo e($announcement['schedule']); ?></span>
+                      <?php if (!empty($announcement['schedule'])): ?>
+                      <span class="announce-schedule"><i class="bi <?php echo e($announcement['schedule_icon']); ?>"></i> <?php echo e($announcement['schedule']); ?></span>
+                      <?php endif; ?>
                       <span class="announce-date"><i class="bi bi-clock-history"></i><?php echo e($announcement['posted']); ?></span>
                     </div>
                     <h3 class="announce-title"><?php echo e($announcement['title']); ?></h3>
                     <p class="announce-body"><?php echo e($announcement['body']); ?></p>
                   </div>
-                </div>
+                </a>
               </div>
             <?php endforeach; ?>
           </div>

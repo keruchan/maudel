@@ -17,6 +17,7 @@
 
     var POLL_INTERVAL_MS = 45000;
     var API_URL = '../api/notifications.php';
+    var LOGIN_TIMEOUT_URL = '../auth/login.php?timeout=1';
 
     document.addEventListener('DOMContentLoaded', function () {
         var bellBtn = document.querySelector('[data-notif-bell]');
@@ -84,10 +85,22 @@
             });
         }
 
+        function parseJsonResponse(r) {
+            if (r.status === 401) {
+                window.location.href = LOGIN_TIMEOUT_URL;
+                return null;
+            }
+            if (!r.ok) {
+                throw new Error('Notification request failed');
+            }
+            return r.json();
+        }
+
         function refresh(renderIfOpen) {
             return fetch(API_URL, { credentials: 'same-origin' })
-                .then(function (r) { return r.json(); })
+                .then(parseJsonResponse)
                 .then(function (data) {
+                    if (!data) { return null; }
                     setBadge(data.unread_count || 0);
                     if (renderIfOpen && panel.classList.contains('is-open')) {
                         renderList(data.notifications || []);
@@ -100,11 +113,12 @@
         function postAction(action, extra) {
             var body = new URLSearchParams(Object.assign({ action: action, csrf_token: csrfToken }, extra || {}));
             return fetch(API_URL, { method: 'POST', credentials: 'same-origin', body: body })
-                .then(function (r) { return r.json(); });
+                .then(parseJsonResponse);
         }
 
         function markAll() {
             return postAction('mark_all').then(function (data) {
+                if (!data) { return; }
                 setBadge(data.unread_count || 0);
                 renderList(data.notifications || []);
             });
@@ -112,6 +126,7 @@
 
         function markOne(id) {
             return postAction('mark_one', { id: id }).then(function (data) {
+                if (!data) { return; }
                 setBadge(data.unread_count || 0);
             });
         }

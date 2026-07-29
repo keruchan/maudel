@@ -65,7 +65,7 @@ $sexLabel = static fn (?string $s): string => $s === 'male' ? 'M' : ($s === 'fem
     <link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="../../css/dashboard.css?v=1">
+    <link rel="stylesheet" href="../../css/dashboard.css?v=2">
 </head>
 <body>
     <a href="#main-content" class="skip-link">Skip to main content</a>
@@ -158,7 +158,7 @@ $sexLabel = static fn (?string $s): string => $s === 'male' ? 'M' : ($s === 'fem
                                 </tr>
                             </thead>
                             <tbody>
-                                <?php foreach ($members as $m): ?>
+                                <?php foreach ($members as $m): $canProfile = (string) $m['status'] === 'active' && !empty($m['verified']); ?>
                                     <tr>
                                         <td>
                                             <div class="fw-semibold"><?php echo e((string) $m['name']); ?></div>
@@ -172,7 +172,9 @@ $sexLabel = static fn (?string $s): string => $s === 'male' ? 'M' : ($s === 'fem
                                         </td>
                                         <td><span class="badge <?php echo $statusBadge((string) $m['status']); ?>"><?php echo e($statusLabel((string) $m['status'])); ?></span></td>
                                         <td>
-                                            <?php if ($m['has_profile']): ?>
+                                            <?php if (!$canProfile): ?>
+                                                <span class="badge text-bg-secondary"><i class="bi bi-lock-fill me-1"></i>Locked</span>
+                                            <?php elseif ($m['has_profile']): ?>
                                                 <span class="badge text-bg-success"><i class="bi bi-check-lg me-1"></i>Complete</span>
                                             <?php else: ?>
                                                 <span class="badge text-bg-secondary"><i class="bi bi-dash-circle me-1"></i>Not yet</span>
@@ -182,8 +184,10 @@ $sexLabel = static fn (?string $s): string => $s === 'male' ? 'M' : ($s === 'fem
                                         <td class="text-end">
                                             <?php if ($m['status'] === 'pending'): ?>
                                                 <a href="verify.php" class="btn btn-sm btn-sked">Validate</a>
-                                            <?php elseif ($m['status'] === 'active'): ?>
+                                            <?php elseif ($canProfile): ?>
                                                 <a href="../manage/kk_profile.php?youth_id=<?php echo (int) $m['id']; ?>" class="btn btn-sm btn-outline-primary"><i class="bi bi-clipboard2-data me-1"></i><?php echo $m['has_profile'] ? 'View profile' : 'Fill profile'; ?></a>
+                                            <?php elseif ($m['status'] === 'active'): ?>
+                                                <button type="button" class="btn btn-sm btn-outline-secondary" disabled title="KK profiling unlocks after SK verification."><i class="bi bi-lock-fill me-1"></i>Locked</button>
                                             <?php else: ?>
                                                 <span class="text-secondary small">—</span>
                                             <?php endif; ?>
@@ -199,7 +203,7 @@ $sexLabel = static fn (?string $s): string => $s === 'male' ? 'M' : ($s === 'fem
         </main>
     </div>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="../../js/table-tools.js"></script>
+    <script src="../../js/table-tools.js?v=4"></script>
     <script>
         new SkedTableTools('#membersTable', {
             pageSize: 12,

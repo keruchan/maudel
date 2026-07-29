@@ -23,10 +23,15 @@ require_once __DIR__ . '/sk_members.php';
 function render_sked_notification_bell(string $placement): void
 {
     $userId = (int) ($_SESSION['id'] ?? 0);
+    $notifUserId = sked_notification_user_id_for_session(
+        $userId,
+        (string) ($_SESSION['role'] ?? ''),
+        isset($_SESSION['barangay_id']) ? (int) $_SESSION['barangay_id'] : null
+    );
     if (empty($_SESSION['csrf_notif_token'])) {
         $_SESSION['csrf_notif_token'] = bin2hex(random_bytes(32));
     }
-    $unread = $userId > 0 ? sked_unread_count($userId) : 0;
+    $unread = $notifUserId > 0 ? sked_unread_count($notifUserId) : 0;
     $badgeLabel = $unread > 99 ? '99+' : (string) $unread;
 
     echo '<button type="button" class="notif-bell notif-bell-' . e($placement) . '"'
@@ -47,7 +52,7 @@ function render_sked_notification_bell(string $placement): void
         . '</div>'
         . '</div>';
 
-    echo '<script src="../../js/notifications.js?v=1" defer></script>';
+    echo '<script src="../../js/notifications.js?v=2" defer></script>';
 }
 
 /**
@@ -71,6 +76,7 @@ function sked_navigation_items_for_role(string $role): array
                 ['key' => 'sk_councils', 'section' => 'Oversight', 'href' => 'sk_councils.php', 'icon' => 'bi-diagram-3', 'label' => 'SK Councils'],
                 ['key' => 'youth_profiles', 'section' => 'Youth Data', 'href' => '../manage/youth_profiles.php', 'icon' => 'bi-people', 'label' => 'Youth Profiles'],
                 ['key' => 'events', 'section' => 'Programs', 'href' => 'events.php', 'icon' => 'bi-calendar-event', 'label' => 'Programs & Events'],
+                ['key' => 'announcements', 'section' => 'Programs', 'href' => '../manage/announcements.php', 'icon' => 'bi-megaphone', 'label' => 'Announcements'],
                 ['key' => 'scan_attendance', 'section' => 'Programs', 'href' => '../manage/scan.php', 'icon' => 'bi-upc-scan', 'label' => 'Scan Attendance'],
                 ['key' => 'plans', 'section' => 'Programs', 'href' => 'plans.php', 'icon' => 'bi-clipboard-data', 'label' => 'Youth Development Plans'],
                 ['key' => 'analytics', 'section' => 'Insights', 'href' => 'analytics.php', 'icon' => 'bi-bar-chart-line', 'label' => 'Analytics'],
@@ -87,6 +93,7 @@ function sked_navigation_items_for_role(string $role): array
                 ['key' => 'turnover', 'section' => 'Federation', 'href' => 'turnover.php', 'icon' => 'bi-arrow-left-right', 'label' => 'Turnover of Power'],
                 ['key' => 'youth_profiles', 'section' => 'Youth Data', 'href' => '../manage/youth_profiles.php', 'icon' => 'bi-people', 'label' => 'Consolidated Profiles'],
                 ['key' => 'events', 'section' => 'Programs', 'href' => 'events.php', 'icon' => 'bi-calendar-event', 'label' => 'Federation Events'],
+                ['key' => 'announcements', 'section' => 'Programs', 'href' => '../manage/announcements.php', 'icon' => 'bi-megaphone', 'label' => 'Announcements'],
                 ['key' => 'scan_attendance', 'section' => 'Programs', 'href' => '../manage/scan.php', 'icon' => 'bi-upc-scan', 'label' => 'Scan Attendance'],
                 ['key' => 'plans', 'section' => 'Programs', 'href' => 'plans.php', 'icon' => 'bi-clipboard-data', 'label' => 'Youth Development Plans'],
                 ['key' => 'analytics', 'section' => 'Insights', 'href' => 'analytics.php', 'icon' => 'bi-bar-chart-line', 'label' => 'Recommended Focus Areas'],
@@ -104,6 +111,7 @@ function sked_navigation_items_for_role(string $role): array
                 ['key' => 'kk_profiling', 'section' => 'Youth', 'href' => 'profiling.php', 'icon' => 'bi-clipboard2-data', 'label' => 'KK Profiling'],
                 ['key' => 'feedback', 'section' => 'Youth', 'href' => 'feedback.php', 'icon' => 'bi-chat-left-text', 'label' => 'Feedback / Concerns'],
                 ['key' => 'manage_events', 'section' => 'Events', 'href' => 'events.php', 'icon' => 'bi-calendar-plus', 'label' => 'Manage Events'],
+                ['key' => 'announcements', 'section' => 'Events', 'href' => '../manage/announcements.php', 'icon' => 'bi-megaphone', 'label' => 'Announcements'],
                 ['key' => 'scan_attendance', 'section' => 'Events', 'href' => '../manage/scan.php', 'icon' => 'bi-upc-scan', 'label' => 'Scan Attendance'],
                 ['key' => 'projects', 'section' => 'Programs', 'href' => 'charters.php', 'icon' => 'bi-clipboard-check', 'label' => 'Project Charters'],
                 ['key' => 'cbydp', 'section' => 'Programs', 'href' => 'cbydp.php', 'icon' => 'bi-clipboard-data', 'label' => 'CBYDP'],
@@ -122,7 +130,6 @@ function sked_navigation_items_for_role(string $role): array
                 ['key' => 'my_profile', 'section' => 'My Profile', 'href' => 'profile.php', 'icon' => 'bi-person-vcard', 'label' => 'KK Profiling'],
                 ['key' => 'my_qr', 'section' => 'My Profile', 'href' => 'my_qr.php', 'icon' => 'bi-qr-code', 'label' => 'My KK ID'],
                 ['key' => 'browse_events', 'section' => 'Events', 'href' => 'events.php', 'icon' => 'bi-calendar-event', 'label' => 'Browse Events'],
-                ['key' => 'my_events', 'section' => 'Events', 'href' => 'events.php', 'icon' => 'bi-calendar-check', 'label' => 'My Registrations'],
                 ['key' => 'self_checkin', 'section' => 'Events', 'href' => 'scan.php', 'icon' => 'bi-upc-scan', 'label' => 'Self Check-in'],
                 ['key' => 'polls', 'section' => 'Community', 'href' => 'polls.php', 'icon' => 'bi-bar-chart-steps', 'label' => 'Community Polls'],
                 ['key' => 'feedback', 'section' => 'Community', 'href' => 'feedback.php', 'icon' => 'bi-chat-left-text', 'label' => 'Feedback / Concerns'],
@@ -289,5 +296,13 @@ function render_sked_navigation(string $role, string $activePage, string $linkBa
 
     <script src="../../js/navigation-state.js?v=1" defer></script>
     <script src="../../js/idle-timeout.js?v=1" defer></script>
+    <script src="../../js/table-tools.js?v=4" defer></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            if (window.SkedTableToolsAuto) {
+                window.SkedTableToolsAuto(document);
+            }
+        });
+    </script>
     <?php
 }

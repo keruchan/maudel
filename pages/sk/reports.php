@@ -43,7 +43,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $creator = ['id' => $skUserId, 'role' => $role, 'name' => $displayName, 'barangay_id' => $barangayId];
         $r = sked_submit_report($creator, 'monthly', (string) ($_POST['title'] ?? ''), (string) ($_POST['content'] ?? ''), (string) ($_POST['period_month'] ?? ''), null, $_FILES['attachment'] ?? null);
         if ($r['ok']) {
-            $flash = ['type' => 'success', 'msg' => 'Monthly report submitted to your PPSK.'];
+            $flash = ['type' => 'success', 'msg' => 'Monthly report submitted to DILG.'];
         } else {
             $formErrors = $r['errors'];
         }
@@ -79,7 +79,7 @@ for ($i = 0; $i < 12; $i++) {
     <link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="../../css/dashboard.css?v=1">
+    <link rel="stylesheet" href="../../css/dashboard.css?v=2">
 </head>
 <body>
     <a href="#main-content" class="skip-link">Skip to main content</a>
@@ -92,7 +92,7 @@ for ($i = 0; $i < 12; $i++) {
                     <div>
                         <div class="eyebrow">Barangay <?php echo e($barangayName !== '' ? $barangayName : 'Council'); ?> &middot; <?php echo e($todayLabel); ?></div>
                         <h1 class="page-title">Monthly Reports</h1>
-                        <p class="text-secondary meta-copy mb-0">Submit your barangay's monthly report to PPSK — due by the 10th.</p>
+                        <p class="text-secondary meta-copy mb-0">Submit your barangay's monthly report to DILG — due by the 10th.</p>
                     </div>
                     <div class="d-flex align-items-center gap-2">
                         <?php render_sked_notification_bell('header'); ?><span class="officer-chip">
@@ -179,7 +179,7 @@ for ($i = 0; $i < 12; $i++) {
                                 <input type="file" class="form-control" id="attachment" name="attachment" accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png">
                                 <div class="form-text">PDF, Word, Excel, JPG, or PNG. Max 10 MB. <?php if (!empty($formErrors)): ?><span class="text-warning-emphasis">A previously chosen file must be picked again because browsers never resend file inputs.</span><?php endif; ?></div>
                             </div>
-                            <button type="submit" class="btn btn-sked w-100"><i class="bi bi-send-check me-1"></i> Submit to PPSK</button>
+                            <button type="submit" class="btn btn-sked w-100"><i class="bi bi-send-check me-1"></i> Submit to DILG</button>
                         </form>
                     </div>
                 </div>
@@ -197,7 +197,7 @@ for ($i = 0; $i < 12; $i++) {
                                         <div class="docket-sub"><?php echo e((string) $r['title']); ?></div>
                                     </div>
                                     <div class="d-flex align-items-center gap-2 flex-wrap justify-content-end">
-                                        <span class="badge <?php echo $r['status'] === 'reviewed' ? 'text-bg-success' : 'text-bg-secondary'; ?>"><?php echo e(ucfirst((string) $r['status'])); ?></span>
+                                        <span class="badge <?php echo e(sked_report_status_badge_class((string) $r['status'])); ?>"><?php echo e(sked_report_status_label((string) $r['status'])); ?></span>
                                         <div class="action-buttons">
                                             <a href="../manage/report_export.php?id=<?php echo (int) $r['id']; ?>" class="btn btn-sm btn-outline-secondary" target="_blank" title="Export report"><i class="bi bi-printer"></i><span>Export</span></a>
                                             <?php if (!empty($r['attachment_file_path'])): ?>
@@ -205,6 +205,9 @@ for ($i = 0; $i < 12; $i++) {
                                             <?php endif; ?>
                                         </div>
                                     </div>
+                                    <?php if (!empty($r['review_comments'])): ?>
+                                        <div class="small text-secondary mt-2 w-100"><strong>DILG comments:</strong> <?php echo nl2br(e((string) $r['review_comments'])); ?></div>
+                                    <?php endif; ?>
                                 </div>
                             <?php endforeach; ?>
                         <?php endif; ?>

@@ -29,7 +29,18 @@ if (empty($_SESSION['id']) || empty($_SESSION['role'])) {
     exit;
 }
 
-$userId = (int) $_SESSION['id'];
+if (sked_session_idle_timed_out()) {
+    sked_clear_session();
+    http_response_code(401);
+    echo json_encode(['error' => 'Session timed out']);
+    exit;
+}
+
+$userId = sked_notification_user_id_for_session(
+    (int) $_SESSION['id'],
+    (string) $_SESSION['role'],
+    isset($_SESSION['barangay_id']) ? (int) $_SESSION['barangay_id'] : null
+);
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $token = (string) ($_POST['csrf_token'] ?? '');
