@@ -67,7 +67,8 @@ $viewerBarangayId = ($isAuthenticated && in_array($viewerRole, ['youth', 'sk'], 
     ? (int) $_SESSION['barangay_id']
     : null;
 $includeAllInterbarangay = ($isAuthenticated && $viewerRole === 'ppsk');
-$feedItems = sked_public_announcements($viewerBarangayId, 6, $includeAllInterbarangay);
+$viewerYouthId = ($isAuthenticated && $viewerRole === 'youth') ? (int) ($_SESSION['id'] ?? 0) : null;
+$feedItems = sked_public_announcements($viewerBarangayId, 6, $includeAllInterbarangay, $viewerYouthId);
 
 $scopeLabels = ['barangay' => 'Barangay Post', 'interbarangay' => 'Inter-Barangay', 'municipal' => 'Municipal-Wide'];
 $announcements = [];
@@ -123,6 +124,11 @@ foreach ($feedItems as $item) {
         'pill' => $pill,
         'schedule' => $schedule,
         'schedule_icon' => $isAnnouncement ? 'bi-pin-angle-fill' : 'bi-calendar-event',
+        // Distinct from an announcement's "Pinned" tag (SK/PPSK/DILG manually
+        // marking it important) — this is the KK-profile personalization
+        // signal, only ever true for an event, only ever computed for a
+        // logged-in youth viewer (see $viewerYouthId above).
+        'for_you' => !$isAnnouncement && !empty($item['is_for_you']),
         'url' => $detailUrl,
         'title' => (string) $item['title'],
         'body' => $body,
@@ -1121,6 +1127,7 @@ if ($geoBarangayView) {
     }
     .announce-type-announcement{background:rgba(245,158,11,.28);border:1px solid rgba(245,158,11,.4);}
     .announce-type-event{background:rgba(14,165,164,.28);border:1px solid rgba(14,165,164,.4);}
+    .announce-type-foryou{background:rgba(250,204,21,.32);border:1px solid rgba(250,204,21,.55);color:#fffbeb;}
     .announce-rail-note{
       color:rgba(255,255,255,.76);
       font-size:.86rem;
@@ -1442,6 +1449,7 @@ if ($geoBarangayView) {
                     </div>
                     <span class="announce-pill"><i class="bi <?php echo e($announcement['pill_icon']); ?>"></i> <?php echo e($announcement['pill']); ?></span>
                     <span class="announce-type-tag announce-type-<?php echo $announcement['type_label'] === 'Announcement' ? 'announcement' : 'event'; ?>"><?php echo e($announcement['type_label']); ?></span>
+                    <?php if ($announcement['for_you']): ?><span class="announce-type-tag announce-type-foryou"><i class="bi bi-stars"></i> For You</span><?php endif; ?>
                   </div>
                   <div class="announce-media">
                     <?php if ($announcement['image_url'] !== ''): ?>

@@ -286,6 +286,10 @@ $renderEventsTable = function (string $title, array $list, string $icon, string 
                                         </div>
                                     </div>
                                 <?php endforeach; ?>
+                                <div class="form-check mt-2">
+                                    <input class="form-check-input" type="checkbox" id="ptargeting_strict" name="targeting_strict" value="1" <?php echo sked_old_checked('targeting_strict', '1') ? 'checked' : ''; ?>>
+                                    <label class="form-check-label small" for="ptargeting_strict"><strong>Strictly apply</strong> — hide this event completely from youth who don't match any option checked above (instead of just showing it to everyone with a "For You" highlight).</label>
+                                </div>
                             </div>
 
                             </div>

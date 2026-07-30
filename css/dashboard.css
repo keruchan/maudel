@@ -3852,7 +3852,16 @@ td.text-end > details > .btn {
     display: flex;
     align-items: center;
     justify-content: center;
+    transition: box-shadow 0.15s ease;
 }
+
+/* Brief colored glow the instant a scan resolves — layered on top of the
+   camera feed itself (see js/qr-attendance.js SkedScanner._flash) so
+   success/failure is obvious even if the text banner above/below isn't
+   noticed in the moment. */
+.scan-viewport.scan-flash-success { box-shadow: 0 0 0 6px rgba(34, 197, 94, 0.65) inset; }
+.scan-viewport.scan-flash-warning { box-shadow: 0 0 0 6px rgba(245, 158, 11, 0.65) inset; }
+.scan-viewport.scan-flash-danger { box-shadow: 0 0 0 6px rgba(239, 68, 68, 0.65) inset; }
 
 .scan-viewport video {
     width: 100%;

@@ -274,6 +274,8 @@ function sked_create_event(array $creator, array $data, ?array $imageFile = null
         'sex' => array_values(array_intersect((array) ($data['target_sex'] ?? []), $targetingOptions['sex'])),
         'interest' => array_values(array_intersect((array) ($data['target_interests'] ?? []), $targetingOptions['interest'])),
     ];
+    $hasAnyTargeting = array_sum(array_map('count', $targeting)) > 0;
+    $targetingStrict = !empty($data['targeting_strict']) ? 1 : 0;
 
     if ($title === '') {
         $errors[] = 'Event title is required.';
@@ -319,6 +321,9 @@ function sked_create_event(array $creator, array $data, ?array $imageFile = null
             $errors = array_merge($errors, $imageValidation['errors']);
         }
     }
+    if ($targetingStrict && !$hasAnyTargeting) {
+        $errors[] = 'Strictly apply requires at least one targeting option selected above.';
+    }
 
     if (!empty($errors)) {
         return ['ok' => false, 'errors' => $errors];
@@ -334,12 +339,12 @@ function sked_create_event(array $creator, array $data, ?array $imageFile = null
             'INSERT INTO events
                 (title, description, category, scope, barangay_id, type, is_team_sport,
                  location, event_date, start_time, end_time, registration_deadline,
-                 min_participants, capacity, share_token, status,
+                 min_participants, capacity, targeting_strict, share_token, status,
                  created_by, created_by_role, created_by_name)
              VALUES
                 (:title, :description, :category, :scope, :barangay_id, :type, :team,
                  :location, :event_date, :start_time, :end_time, :reg_deadline,
-                 :min_participants, :capacity, :share_token, :status,
+                 :min_participants, :capacity, :targeting_strict, :share_token, :status,
                  :created_by, :created_by_role, :created_by_name)'
         );
         $stmt->execute([
@@ -357,6 +362,7 @@ function sked_create_event(array $creator, array $data, ?array $imageFile = null
             'reg_deadline' => $regDeadline !== '' ? $regDeadline : null,
             'min_participants' => $minParticipants,
             'capacity' => $capacity,
+            'targeting_strict' => $targetingStrict,
             'share_token' => $shareToken,
             'status' => $status,
             'created_by' => (int) ($creator['id'] ?? 0) ?: null,
@@ -566,8 +572,59 @@ function sked_events_for_manager(string $role, int $userId, ?int $barangayId): a
 }
 
 /**
+ * "For You" match map for a set of event ids against one youth's own KK
+ * Profiling values (classification/specific_need/interest/sex). ANY
+ * dimension match is enough. $youthId <= 0 (no profile to compare, e.g. an
+ * anonymous landing-page visitor) matches nothing, same as a youth with a
+ * completely empty profile.
+ *
+ * @param array<int,int> $eventIds
+ * @return array<int,bool> event_id => is_for_you
+ */
+function sked_events_for_you_map(array $eventIds, int $youthId): array
+{
+    $map = array_fill_keys($eventIds, false);
+    if (empty($eventIds) || $youthId <= 0) {
+        return $map;
+    }
+
+    $pdo = sked_db();
+    $ownValues = [
+        'classification' => sked_profile_child_values($youthId, 'youth_classifications', 'classification'),
+        'specific_need' => sked_profile_child_values($youthId, 'youth_specific_needs', 'need_type'),
+        'interest' => sked_profile_child_values($youthId, 'youth_interests', 'category'),
+    ];
+    $sexStmt = $pdo->prepare('SELECT sex_assigned_at_birth FROM users WHERE id = :id LIMIT 1');
+    $sexStmt->execute(['id' => $youthId]);
+    $ownSex = (string) ($sexStmt->fetchColumn() ?: '');
+    $ownValues['sex'] = $ownSex !== '' ? [$ownSex] : [];
+
+    $in = implode(',', array_fill(0, count($eventIds), '?'));
+    $ts = $pdo->prepare("SELECT event_id, dimension, value FROM event_targeting WHERE event_id IN ($in)");
+    $ts->execute($eventIds);
+    $targetingByEvent = [];
+    foreach ($ts->fetchAll() as $r) {
+        $targetingByEvent[(int) $r['event_id']][(string) $r['dimension']][] = (string) $r['value'];
+    }
+
+    foreach ($eventIds as $id) {
+        $eventTargeting = $targetingByEvent[$id] ?? [];
+        foreach ($eventTargeting as $dimension => $values) {
+            if (array_intersect($values, $ownValues[$dimension] ?? []) !== []) {
+                $map[$id] = true;
+                break;
+            }
+        }
+    }
+    return $map;
+}
+
+/**
  * Published events a youth in $barangayId is eligible to see, with their own
- * participation status attached. Newest event date first.
+ * participation status attached. Newest event date first. Events flagged
+ * `targeting_strict` are dropped entirely for a youth who doesn't match any
+ * of their targeting dimensions — a real visibility filter, unlike the
+ * default "For You" behavior (badge + sort boost, nobody excluded).
  */
 function sked_events_for_youth(int $youthId, int $barangayId): array
 {
@@ -586,49 +643,28 @@ function sked_events_for_youth(int $youthId, int $barangayId): array
     $stmt->execute(['b1' => $barangayId, 'b2' => $barangayId]);
     $events = $stmt->fetchAll();
 
-    if (!empty($events) && $youthId > 0) {
+    if (!empty($events)) {
         $ids = array_column($events, 'id');
-        $in = implode(',', array_fill(0, count($ids), '?'));
-        $ps = $pdo->prepare("SELECT event_id, status FROM event_participants WHERE user_id = ? AND event_id IN ($in)");
-        $ps->execute(array_merge([$youthId], $ids));
         $mine = [];
-        foreach ($ps->fetchAll() as $r) {
-            $mine[(int) $r['event_id']] = $r['status'];
+        if ($youthId > 0) {
+            $in = implode(',', array_fill(0, count($ids), '?'));
+            $ps = $pdo->prepare("SELECT event_id, status FROM event_participants WHERE user_id = ? AND event_id IN ($in)");
+            $ps->execute(array_merge([$youthId], $ids));
+            foreach ($ps->fetchAll() as $r) {
+                $mine[(int) $r['event_id']] = $r['status'];
+            }
         }
 
-        // "For You": the youth's own KK Profiling values, compared against
-        // each event's (optional) targeting rows. ANY dimension match is
-        // enough — this is a soft highlight/sort signal, not a filter.
-        $ownValues = [
-            'classification' => sked_profile_child_values($youthId, 'youth_classifications', 'classification'),
-            'specific_need' => sked_profile_child_values($youthId, 'youth_specific_needs', 'need_type'),
-            'interest' => sked_profile_child_values($youthId, 'youth_interests', 'category'),
-        ];
-        $sexStmt = $pdo->prepare('SELECT sex_assigned_at_birth FROM users WHERE id = :id LIMIT 1');
-        $sexStmt->execute(['id' => $youthId]);
-        $ownSex = (string) ($sexStmt->fetchColumn() ?: '');
-        $ownValues['sex'] = $ownSex !== '' ? [$ownSex] : [];
-
-        $ts = $pdo->prepare("SELECT event_id, dimension, value FROM event_targeting WHERE event_id IN ($in)");
-        $ts->execute($ids);
-        $targetingByEvent = [];
-        foreach ($ts->fetchAll() as $r) {
-            $targetingByEvent[(int) $r['event_id']][(string) $r['dimension']][] = (string) $r['value'];
-        }
-
+        $forYouMap = sked_events_for_you_map($ids, $youthId);
         foreach ($events as &$e) {
             $e['my_status'] = $mine[(int) $e['id']] ?? null;
-            $eventTargeting = $targetingByEvent[(int) $e['id']] ?? [];
-            $forYou = false;
-            foreach ($eventTargeting as $dimension => $values) {
-                if (array_intersect($values, $ownValues[$dimension] ?? []) !== []) {
-                    $forYou = true;
-                    break;
-                }
-            }
-            $e['is_for_you'] = $forYou;
+            $e['is_for_you'] = $forYouMap[(int) $e['id']] ?? false;
         }
         unset($e);
+
+        $events = array_values(array_filter($events, static fn ($e) =>
+            !((int) ($e['targeting_strict'] ?? 0) === 1 && empty($e['is_for_you']))
+        ));
     }
     return $events;
 }
@@ -653,7 +689,7 @@ function sked_events_for_youth(int $youthId, int $barangayId): array
  * $viewerBarangayId is Acevida's id. Used for both youth and SK viewers
  * (SK passes their own session barangay_id, same as youth).
  */
-function sked_public_announcements(?int $viewerBarangayId, int $limit = 6, bool $includeAllInterbarangay = false): array
+function sked_public_announcements(?int $viewerBarangayId, int $limit = 6, bool $includeAllInterbarangay = false, ?int $viewerYouthId = null): array
 {
     require_once __DIR__ . '/announcements.php';
 
@@ -684,6 +720,22 @@ function sked_public_announcements(?int $viewerBarangayId, int $limit = 6, bool 
         $stmt->execute(['b1' => $viewerBarangayId, 'b2' => $viewerBarangayId]);
         $events = $stmt->fetchAll();
     }
+
+    // "For You" tagging + strict-targeting visibility filter, same rule as
+    // sked_events_for_youth(): a non-youth/anonymous viewer ($viewerYouthId
+    // null) matches nothing, so a strictly-targeted event never appears on
+    // the public feed for them either.
+    if (!empty($events)) {
+        $forYouMap = sked_events_for_you_map(array_column($events, 'id'), (int) $viewerYouthId);
+        foreach ($events as &$e) {
+            $e['is_for_you'] = $forYouMap[(int) $e['id']] ?? false;
+        }
+        unset($e);
+        $events = array_values(array_filter($events, static fn ($e) =>
+            !((int) ($e['targeting_strict'] ?? 0) === 1 && empty($e['is_for_you']))
+        ));
+    }
+
     foreach ($events as &$e) {
         $e['feed_type'] = 'event';
         $e['pinned'] = 0;
@@ -695,11 +747,20 @@ function sked_public_announcements(?int $viewerBarangayId, int $limit = 6, bool 
     foreach ($announcements as &$a) {
         $a['feed_type'] = 'announcement';
         $a['feed_sort_at'] = (string) $a['created_at'];
+        $a['is_for_you'] = false; // personalization only ever applies to events, not announcements
     }
     unset($a);
 
+    // "For You" outranks everything else, including Pinned — a personalized
+    // match is more relevant to THIS viewer than a generically-important
+    // pinned notice. Pinned still breaks ties within each of those two
+    // groups, then newest first.
     $merged = array_merge($announcements, $events);
     usort($merged, static function ($a, $b) {
+        $forYouCmp = (int) !empty($b['is_for_you']) <=> (int) !empty($a['is_for_you']);
+        if ($forYouCmp !== 0) {
+            return $forYouCmp;
+        }
         $pinCmp = (int) $b['pinned'] <=> (int) $a['pinned'];
         return $pinCmp !== 0 ? $pinCmp : strcmp((string) $b['feed_sort_at'], (string) $a['feed_sort_at']);
     });

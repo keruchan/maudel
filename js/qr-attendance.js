@@ -33,6 +33,8 @@
         this.lastPayload = '';
         this.lastAt = 0;
         this.busy = false;
+        this._audioCtx = null;
+        this._flashTimer = null;
     }
 
     /** Camera access requires a secure context (https, or localhost). */
@@ -57,6 +59,12 @@
     SkedScanner.prototype.start = function () {
         var self = this;
         if (this.running) { return; }
+        // Create/unlock the AudioContext here, synchronously inside the
+        // button-click handler that called us — some browsers (notably iOS
+        // Safari) only allow audio playback if the context was created or
+        // resumed directly from a genuine user gesture, not from an async
+        // callback later on (like the camera-decode success handler).
+        this._beep_warm();
         if (typeof global.Html5Qrcode === 'undefined') {
             this._emit({ ok: false, result: 'rejected', message: 'Scanner library failed to load. Check your connection, or use manual entry.' });
             return;
@@ -128,8 +136,76 @@
         });
     };
 
+    // Feedback is deliberately multi-modal (sound + a colored flash right on
+    // the camera view + vibration on phones), not just the text banner
+    // below. Officials are looking at the card/camera, not the banner, at
+    // the exact instant a scan resolves — a beep and a flash on the thing
+    // they're already looking at is much harder to miss than text that may
+    // be scrolled out of view or just outside their attention.
     SkedScanner.prototype._emit = function (data) {
+        var tone = SkedScanner.resultTone(data);
+        this._beep(tone);
+        this._flash(tone);
+        if (global.navigator && typeof global.navigator.vibrate === 'function') {
+            global.navigator.vibrate(tone === 'success' ? 60 : (tone === 'warning' ? [50, 40, 50] : [120, 60, 120]));
+        }
         if (typeof this.opts.onResult === 'function') { this.opts.onResult(data); }
+    };
+
+    /** Create (or resume) the shared AudioContext; returns null if unsupported. */
+    SkedScanner.prototype._ensureAudio = function () {
+        var Ctx = global.AudioContext || global.webkitAudioContext;
+        if (!Ctx) { return null; }
+        if (!this._audioCtx) {
+            try {
+                this._audioCtx = new Ctx();
+            } catch (e) {
+                return null;
+            }
+        }
+        if (this._audioCtx.state === 'suspended' && typeof this._audioCtx.resume === 'function') {
+            this._audioCtx.resume().catch(function () { /* still locked until a user gesture; harmless */ });
+        }
+        return this._audioCtx;
+    };
+
+    /** Called from a real button-click gesture (start()) to unlock audio early. */
+    SkedScanner.prototype._beep_warm = function () {
+        this._ensureAudio();
+    };
+
+    /** Short success/duplicate/error tone via Web Audio — no asset file needed. */
+    SkedScanner.prototype._beep = function (tone) {
+        var ctx = this._ensureAudio();
+        if (!ctx) { return; }
+        try {
+            var osc = ctx.createOscillator();
+            var gain = ctx.createGain();
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            var freq = tone === 'success' ? 880 : (tone === 'warning' ? 520 : 220);
+            var dur = tone === 'success' ? 0.16 : 0.32;
+            osc.type = 'sine';
+            osc.frequency.value = freq;
+            var now = ctx.currentTime;
+            gain.gain.setValueAtTime(0.0001, now);
+            gain.gain.exponentialRampToValueAtTime(0.3, now + 0.01);
+            gain.gain.exponentialRampToValueAtTime(0.0001, now + dur);
+            osc.start(now);
+            osc.stop(now + dur + 0.02);
+        } catch (e) { /* audio blocked/unavailable — the visual feedback still fires */ }
+    };
+
+    /** Brief colored glow around the camera viewport itself (see css/dashboard.css .scan-flash-*). */
+    SkedScanner.prototype._flash = function (tone) {
+        var el = this.opts.mount && global.document.getElementById(this.opts.mount);
+        if (!el) { return; }
+        var cls = 'scan-flash-' + tone;
+        el.classList.add('scan-flash', cls);
+        global.clearTimeout(this._flashTimer);
+        this._flashTimer = global.setTimeout(function () {
+            el.classList.remove('scan-flash', cls);
+        }, 550);
     };
 
     SkedScanner.resultTone = function (data) {
